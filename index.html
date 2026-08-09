@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Бережок — список на подумать</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap');
+
+  :root{
+    --paper: #EDE9E0;
+    --paper-raised: #F8F5EE;
+    --ink: #2A2822;
+    --ink-soft: #6B675C;
+    --waiting: #58705F;
+    --waiting-soft: #DDE4DA;
+    --ready: #8C5A6B;
+    --ready-soft: #EFDEE3;
+    --archive: #A79C89;
+    --archive-soft: #E7E2D5;
+    --line: #DCD5C4;
+    --danger: #A85B45;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Inter',-apple-system,'Segoe UI',Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+    padding-bottom:64px;
+  }
+
+  .wrap{max-width:560px;margin:0 auto;padding:0 18px;}
+
+  header.top{
+    position:sticky;top:0;z-index:20;
+    background:var(--paper);
+    border-bottom:1px solid var(--line);
+    padding:18px 0 14px;
+  }
+  header.top .row{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;}
+  h1{
+    font-family:'Fraunces',serif;
+    font-optical-sizing:auto;
+    font-weight:600;
+    font-size:30px;
+    letter-spacing:-0.01em;
+    margin:0;
+    line-height:1;
+  }
+  .tagline{
+    margin:6px 0 0;
+    font-size:13.5px;
+    color:var(--ink-soft);
+  }
+  .icon-btn{
+    background:none;border:1px solid var(--line);border-radius:10px;
+    width:38px;height:38px;display:flex;align-items:center;justify-content:center;
+    cursor:pointer;color:var(--ink);flex:none;
+  }
+  .icon-btn:hover{background:var(--paper-raised);}
+  .icon-btn svg{width:18px;height:18px;}
+
+  main{padding-top:20px;}
+
+  .add-btn{
+    width:100%;
+    background:var(--ink);
+    color:var(--paper-raised);
+    border:none;
+    border-radius:14px;
+    padding:14px 16px;
+    font-family:'Inter',sans-serif;
+    font-weight:600;
+    font-size:15px;
+    cursor:pointer;
+    display:flex;align-items:center;justify-content:center;gap:8px;
+    margin-bottom:26px;
+  }
+  .add-btn:active{opacity:0.85;}
+
+  .section{margin-bottom:28px;}
+  .section-head{
+    display:flex;align-items:baseline;justify-content:space-between;
+    margin-bottom:10px;
+  }
+  .section-title{
+    font-family:'Fraunces',serif;
+    font-weight:500;
+    font-size:17px;
+  }
+  .section-count{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    color:var(--ink-soft);
+  }
+  .section-hint{
+    font-size:12.5px;
+    color:var(--ink-soft);
+    margin:-4px 0 12px;
+  }
+
+  .empty{
+    border:1px dashed var(--line);
+    border-radius:14px;
+    padding:18px 16px;
+    color:var(--ink-soft);
+    font-size:13.5px;
+    line-height:1.5;
+  }
+
+  .card{
+    background:var(--paper-raised);
+    border-radius:16px;
+    padding:14px;
+    margin-bottom:10px;
+    border:1px solid var(--line);
+  }
+  .card.waiting-card{
+    opacity:0.72;
+  }
+  .card-top{display:flex;gap:12px;}
+  .thumb{
+    width:52px;height:52px;border-radius:10px;
+    background:var(--archive-soft);
+    flex:none;object-fit:cover;
+    display:flex;align-items:center;justify-content:center;
+    font-family:'Fraunces',serif;font-size:18px;color:var(--ink-soft);
+    overflow:hidden;
+  }
+  .thumb img{width:100%;height:100%;object-fit:cover;}
+  .card-info{flex:1;min-width:0;}
+  .card-name{
+    font-weight:600;font-size:14.5px;
+    display:block;text-decoration:none;color:var(--ink);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  a.card-name:hover{text-decoration:underline;}
+  .card-price{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:13px;color:var(--ink-soft);margin-top:2px;
+  }
+
+  .gauge-row{display:flex;align-items:center;gap:8px;margin-top:10px;}
+  .gauge{
+    flex:1;height:6px;border-radius:4px;background:var(--line);overflow:hidden;
+  }
+  .gauge-fill{height:100%;border-radius:4px;background:var(--waiting);}
+  .gauge-fill.is-ready{background:var(--ready);}
+  .gauge-label{
+    font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);flex:none;
+  }
+
+  .actions{display:flex;gap:8px;margin-top:12px;}
+  .btn{
+    flex:1;border-radius:10px;border:1px solid var(--line);
+    background:transparent;padding:10px 8px;font-size:13px;font-weight:600;
+    cursor:pointer;font-family:'Inter',sans-serif;color:var(--ink);
+  }
+  .btn.keep{background:var(--ready);border-color:var(--ready);color:#fff;}
+  .btn.drop{color:var(--ink-soft);}
+  .btn:active{opacity:0.8;}
+  .btn.small{flex:none;padding:8px 10px;font-size:12px;}
+
+  .archive-toggle{
+    background:none;border:none;color:var(--ink-soft);
+    font-size:12.5px;cursor:pointer;padding:0;text-decoration:underline;
+  }
+
+  .badge{
+    display:inline-block;font-size:10.5px;font-weight:600;
+    padding:3px 8px;border-radius:100px;margin-top:6px;
+    font-family:'Inter',sans-serif;
+  }
+  .badge.kept{background:var(--ready-soft);color:var(--ready);}
+  .badge.dropped{background:var(--archive-soft);color:var(--archive);}
+  .badge.expired{background:var(--archive-soft);color:var(--ink-soft);}
+
+  .peek{
+    border:1px solid var(--line);border-radius:14px;padding:12px 16px;
+    display:flex;align-items:center;justify-content:space-between;
+    font-size:13px;color:var(--ink-soft);cursor:pointer;
+  }
+
+  /* modal */
+  .overlay{
+    position:fixed;inset:0;background:rgba(42,40,34,0.4);
+    display:none;align-items:flex-end;justify-content:center;z-index:50;
+  }
+  .overlay.open{display:flex;}
+  .sheet{
+    background:var(--paper);width:100%;max-width:560px;
+    border-radius:20px 20px 0 0;padding:20px 18px 28px;
+    max-height:88vh;overflow-y:auto;
+    animation:up .18s ease-out;
+  }
+  @keyframes up{from{transform:translateY(16px);opacity:0;}to{transform:translateY(0);opacity:1;}}
+  .sheet-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
+  .sheet-title{font-family:'Fraunces',serif;font-size:19px;font-weight:600;}
+  .field{margin-bottom:14px;}
+  .field label{
+    display:block;font-size:12.5px;font-weight:600;color:var(--ink-soft);
+    margin-bottom:6px;
+  }
+  .field input, .field select{
+    width:100%;border:1px solid var(--line);border-radius:10px;
+    padding:11px 12px;font-size:14.5px;font-family:'Inter',sans-serif;
+    background:var(--paper-raised);color:var(--ink);
+  }
+  .field input:focus, .field select:focus{outline:2px solid var(--waiting);outline-offset:1px;}
+  .field-note{font-size:11.5px;color:var(--ink-soft);margin-top:5px;}
+  .two-col{display:flex;gap:10px;}
+  .two-col .field{flex:1;}
+  .submit-btn{
+    width:100%;background:var(--ink);color:var(--paper-raised);
+    border:none;border-radius:12px;padding:13px;font-size:15px;font-weight:600;
+    cursor:pointer;margin-top:6px;font-family:'Inter',sans-serif;
+  }
+  .toggle-row{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:12px 0;border-bottom:1px solid var(--line);
+  }
+  .toggle-row:last-of-type{border-bottom:none;}
+  .toggle-row .label{font-size:14px;font-weight:500;}
+  .toggle-row .sub{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
+  .switch{
+    width:42px;height:24px;border-radius:100px;background:var(--line);
+    position:relative;cursor:pointer;flex:none;border:none;
+  }
+  .switch.on{background:var(--waiting);}
+  .switch .dot{
+    position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;
+    background:#fff;transition:left .15s ease;
+  }
+  .switch.on .dot{left:21px;}
+
+  .close-x{background:none;border:none;color:var(--ink-soft);cursor:pointer;padding:4px;}
+  .close-x svg{width:20px;height:20px;}
+
+  .toast{
+    position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+    background:var(--ink);color:var(--paper-raised);
+    padding:10px 18px;border-radius:100px;font-size:13px;
+    opacity:0;pointer-events:none;transition:opacity .2s ease, transform .2s ease;
+    z-index:60;white-space:nowrap;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px);}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <div class="row">
+      <div>
+        <h1>Бережок</h1>
+        <p class="tagline">список на подумать, прежде чем купить</p>
+      </div>
+      <button class="icon-btn" id="settingsBtn" aria-label="Настройки">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.5-2-3.4-2.4.6a7.7 7.7 0 0 0-1.7-1L15 3h-6l-.3 2.7a7.7 7.7 0 0 0-1.7 1l-2.4-.6-2 3.4L4.6 11a7.6 7.6 0 0 0 0 2l-2 1.5 2 3.4 2.4-.6a7.7 7.7 0 0 0 1.7 1L9 21h6l.3-2.7a7.7 7.7 0 0 0 1.7-1l2.4.6 2-3.4-2-1.5Z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <button class="add-btn" id="openAddBtn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+      Добавить вещь
+    </button>
+
+    <div class="section" id="readySection">
+      <div class="section-head">
+        <span class="section-title">Пора решать</span>
+        <span class="section-count" id="readyCount">0</span>
+      </div>
+      <div id="readyList"></div>
+    </div>
+
+    <div class="section" id="waitingSection">
+      <div class="section-head">
+        <span class="section-title">Ждут своего часа</span>
+        <span class="section-count" id="waitingCount">0</span>
+      </div>
+      <div id="waitingList"></div>
+    </div>
+
+    <div class="section" id="archiveSection">
+      <div class="section-head">
+        <button class="archive-toggle" id="archiveToggle">Архив (<span id="archiveCount">0</span>) — показать</button>
+      </div>
+      <div id="archiveList" style="display:none;"></div>
+    </div>
+  </main>
+</div>
+
+<!-- Add item sheet -->
+<div class="overlay" id="addOverlay">
+  <div class="sheet">
+    <div class="sheet-head">
+      <span class="sheet-title">Новая вещь</span>
+      <button class="close-x" id="closeAdd" aria-label="Закрыть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <form id="addForm">
+      <div class="field">
+        <label for="f-name">Что хочешь купить</label>
+        <input type="text" id="f-name" placeholder="Например: бежевые кроссовки" required>
+      </div>
+      <div class="field">
+        <label for="f-url">Ссылка (необязательно)</label>
+        <input type="url" id="f-url" placeholder="https://…">
+      </div>
+      <div class="two-col">
+        <div class="field">
+          <label for="f-price">Цена</label>
+          <input type="text" id="f-price" placeholder="2 400 ₽">
+        </div>
+        <div class="field">
+          <label for="f-photo">Фото (ссылка)</label>
+          <input type="url" id="f-photo" placeholder="https://…">
+        </div>
+      </div>
+      <div class="field">
+        <label for="f-wait">Подождать сколько</label>
+        <select id="f-wait">
+          <option value="default">Как обычно (настройки)</option>
+          <option value="3">3 дня</option>
+          <option value="7">Неделю</option>
+          <option value="14">Две недели</option>
+          <option value="30">Месяц</option>
+        </select>
+      </div>
+      <button type="submit" class="submit-btn">Положить в лист ожидания</button>
+    </form>
+  </div>
+</div>
+
+<!-- Settings sheet -->
+<div class="overlay" id="settingsOverlay">
+  <div class="sheet">
+    <div class="sheet-head">
+      <span class="sheet-title">Настройки</span>
+      <button class="close-x" id="closeSettings" aria-label="Закрыть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+
+    <div class="field">
+      <label for="s-wait">Сколько ждать по умолчанию</label>
+      <select id="s-wait">
+        <option value="3">3 дня</option>
+        <option value="7">Неделю</option>
+        <option value="14">Две недели</option>
+        <option value="30">Месяц</option>
+      </select>
+      <div class="field-note">Можно менять для каждой вещи отдельно при добавлении.</div>
+    </div>
+
+    <div class="toggle-row">
+      <div>
+        <div class="label">Показывать список ожидания</div>
+        <div class="sub">Если выключить — вещи, которые ещё «остывают», будут скрыты, пока не придёт время решать</div>
+      </div>
+      <button class="switch" id="s-hideToggle" role="switch" aria-checked="true"><span class="dot"></span></button>
+    </div>
+
+    <div class="field" style="margin-top:14px;">
+      <label for="s-archiveAction">Если не приняла решение за месяц</label>
+      <select id="s-archiveAction">
+        <option value="archive">Переносить в архив</option>
+        <option value="delete">Просто убирать из списка</option>
+      </select>
+    </div>
+
+    <div class="field-note" style="margin-top:16px;">
+      Пока бот не присылает напоминания сам — приложение покажет, что пора решать, когда ты зайдёшь. Уведомления от бота — следующий шаг.
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  const DAY = 86400000;
+  let items = [];
+  let settings = { defaultWaitDays: 7, hideWaiting: false, archiveAction: 'archive', archiveAfterDays: 30 };
+  let archiveOpen = false;
+
+  const $ = (id) => document.getElementById(id);
+
+  function uid(){ return 'i' + Date.now() + Math.random().toString(36).slice(2,8); }
+
+  function showToast(msg){
+    const t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(showToast._h);
+    showToast._h = setTimeout(()=>t.classList.remove('show'), 1800);
+  }
+
+  // --- storage layer ---
+  // Внутри Telegram данные хранятся в CloudStorage (привязано к пользователю,
+  // переживёт смену телефона). Если файл открыт не в Telegram (например, при
+  // локальной проверке в браузере) — используется localStorage, просто чтобы
+  // было чем проверить логику. В боевом виде это работает только в Telegram.
+  const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+  const hasCloud = !!(tg && tg.CloudStorage);
+
+  function cloudGet(key){
+    return new Promise((resolve)=>{
+      if(hasCloud){
+        tg.CloudStorage.getItem(key, (err, value)=> resolve(err ? '' : (value || '')));
+      } else {
+        resolve(localStorage.getItem(key) || '');
+      }
+    });
+  }
+  function cloudSet(key, value){
+    return new Promise((resolve, reject)=>{
+      if(hasCloud){
+        tg.CloudStorage.setItem(key, value, (err, ok)=> err ? reject(err) : resolve(ok));
+      } else {
+        localStorage.setItem(key, value);
+        resolve(true);
+      }
+    });
+  }
+
+  async function loadData(){
+    try{
+      const raw = await cloudGet('items');
+      items = raw ? JSON.parse(raw) : [];
+    }catch(e){ items = []; }
+    try{
+      const raw = await cloudGet('settings');
+      if(raw) settings = Object.assign(settings, JSON.parse(raw));
+    }catch(e){ /* keep defaults */ }
+  }
+
+  async function saveItems(){
+    try{ await cloudSet('items', JSON.stringify(items)); }
+    catch(e){ showToast('Не получилось сохранить :('); }
+  }
+  async function saveSettings(){
+    try{ await cloudSet('settings', JSON.stringify(settings)); }
+    catch(e){ showToast('Не получилось сохранить настройки'); }
+  }
+
+  function sweepExpired(){
+    const now = Date.now();
+    let changed = false;
+    items.forEach(it=>{
+      if(it.decision || it.archived) return;
+      const wait = (it.waitDays || settings.defaultWaitDays) * DAY;
+      const readyAt = it.addedAt + wait;
+      if(now >= readyAt + settings.archiveAfterDays * DAY){
+        changed = true;
+        if(settings.archiveAction === 'delete'){
+          it._toDelete = true;
+        }else{
+          it.archived = true;
+          it.decision = 'expired';
+          it.decidedAt = now;
+        }
+      }
+    });
+    if(changed){
+      items = items.filter(it => !it._toDelete);
+      saveItems();
+    }
+  }
+
+  function fmtDays(n){
+    const abs = Math.abs(n);
+    const rem = abs % 10, rem100 = abs % 100;
+    let word = 'дней';
+    if(rem100 < 11 || rem100 > 14){
+      if(rem === 1) word = 'день';
+      else if(rem>=2 && rem<=4) word = 'дня';
+    }
+    return abs + ' ' + word;
+  }
+
+  function itemStatus(it){
+    if(it.archived) return 'archived';
+    if(it.decision) return 'archived';
+    const wait = (it.waitDays || settings.defaultWaitDays) * DAY;
+    const readyAt = it.addedAt + wait;
+    return Date.now() >= readyAt ? 'ready' : 'waiting';
+  }
+
+  function thumbHTML(it){
+    if(it.photo){
+      return `<div class="thumb"><img src="${escAttr(it.photo)}" alt="" onerror="this.parentElement.innerHTML='${(it.name||'?').charAt(0).toUpperCase()}'"></div>`;
+    }
+    return `<div class="thumb">${escHTML((it.name||'?').charAt(0).toUpperCase())}</div>`;
+  }
+
+  function escHTML(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function escAttr(s){ return escHTML(s); }
+
+  function renderReadyCard(it){
+    const nameEl = it.url
+      ? `<a class="card-name" href="${escAttr(it.url)}" target="_blank" rel="noopener">${escHTML(it.name)}</a>`
+      : `<span class="card-name">${escHTML(it.name)}</span>`;
+    return `
+    <div class="card" data-id="${it.id}">
+      <div class="card-top">
+        ${thumbHTML(it)}
+        <div class="card-info">
+          ${nameEl}
+          ${it.price ? `<div class="card-price">${escHTML(it.price)}</div>` : ''}
+        </div>
+      </div>
+      <div class="gauge-row">
+        <div class="gauge"><div class="gauge-fill is-ready" style="width:100%"></div></div>
+        <span class="gauge-label">пора решать</span>
+      </div>
+      <div class="actions">
+        <button class="btn keep" data-action="keep" data-id="${it.id}">Всё ещё хочу</button>
+        <button class="btn drop" data-action="drop" data-id="${it.id}">Уже не надо</button>
+      </div>
+    </div>`;
+  }
+
+  function renderWaitingCard(it){
+    const wait = (it.waitDays || settings.defaultWaitDays);
+    const waitMs = wait * DAY;
+    const elapsed = Date.now() - it.addedAt;
+    const pct = Math.max(3, Math.min(100, Math.round((elapsed / waitMs) * 100)));
+    const daysLeft = Math.max(0, Math.ceil((waitMs - elapsed) / DAY));
+    const nameEl = it.url
+      ? `<a class="card-name" href="${escAttr(it.url)}" target="_blank" rel="noopener">${escHTML(it.name)}</a>`
+      : `<span class="card-name">${escHTML(it.name)}</span>`;
+    return `
+    <div class="card waiting-card" data-id="${it.id}">
+      <div class="card-top">
+        ${thumbHTML(it)}
+        <div class="card-info">
+          ${nameEl}
+          ${it.price ? `<div class="card-price">${escHTML(it.price)}</div>` : ''}
+        </div>
+      </div>
+      <div class="gauge-row">
+        <div class="gauge"><div class="gauge-fill" style="width:${pct}%"></div></div>
+        <span class="gauge-label">ещё ${fmtDays(daysLeft)}</span>
+      </div>
+    </div>`;
+  }
+
+  function renderArchiveRow(it){
+    const badge = it.decision === 'keep'
+      ? '<span class="badge kept">оставила в желаниях</span>'
+      : it.decision === 'expired'
+      ? '<span class="badge expired">истёк срок</span>'
+      : '<span class="badge dropped">отказалась</span>';
+    const nameEl = it.url
+      ? `<a class="card-name" href="${escAttr(it.url)}" target="_blank" rel="noopener">${escHTML(it.name)}</a>`
+      : `<span class="card-name">${escHTML(it.name)}</span>`;
+    return `
+    <div class="card" data-id="${it.id}" style="opacity:0.85;">
+      <div class="card-top">
+        ${thumbHTML(it)}
+        <div class="card-info">
+          ${nameEl}
+          ${it.price ? `<div class="card-price">${escHTML(it.price)}</div>` : ''}
+          ${badge}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function render(){
+    sweepExpired();
+    const ready = items.filter(it => itemStatus(it) === 'ready');
+    const waiting = items.filter(it => itemStatus(it) === 'waiting');
+    const archived = items.filter(it => itemStatus(it) === 'archived');
+
+    $('readyCount').textContent = ready.length;
+    $('waitingCount').textContent = waiting.length;
+    $('archiveCount').textContent = archived.length;
+
+    $('readyList').innerHTML = ready.length
+      ? ready.map(renderReadyCard).join('')
+      : `<div class="empty">Пока нечего решать. Как только что-то отлежится — появится здесь.</div>`;
+
+    if(settings.hideWaiting){
+      $('waitingSection').style.display = waiting.length ? 'block' : 'none';
+      if(waiting.length){
+        $('waitingList').innerHTML = `<div class="peek" id="peekWaiting">Кое-что ещё «остывает» (${waiting.length}) — посмотреть</div>`;
+        const peek = $('peekWaiting');
+        if(peek) peek.addEventListener('click', ()=>{
+          $('waitingList').innerHTML = waiting.map(renderWaitingCard).join('');
+        });
+      }
+    } else {
+      $('waitingSection').style.display = 'block';
+      $('waitingList').innerHTML = waiting.length
+        ? waiting.map(renderWaitingCard).join('')
+        : `<div class="empty">Список ожидания пуст. Добавь то, на что смотришь прямо сейчас — вернёмся к этому позже.</div>`;
+    }
+
+    $('archiveList').innerHTML = archived.length
+      ? archived.slice().reverse().map(renderArchiveRow).join('')
+      : `<div class="empty">Архив пуст.</div>`;
+    $('archiveList').style.display = archiveOpen ? 'block' : 'none';
+    $('archiveToggle').innerHTML = `Архив (<span id="archiveCount">${archived.length}</span>) — ${archiveOpen ? 'скрыть' : 'показать'}`;
+
+    document.querySelectorAll('[data-action]').forEach(btn=>{
+      btn.addEventListener('click', onDecision);
+    });
+  }
+
+  async function onDecision(e){
+    const id = e.currentTarget.getAttribute('data-id');
+    const action = e.currentTarget.getAttribute('data-action');
+    const it = items.find(x => x.id === id);
+    if(!it) return;
+    it.decision = action;
+    it.decidedAt = Date.now();
+    it.archived = true;
+    await saveItems();
+    render();
+    showToast(action === 'keep' ? 'Записала — она всё ещё в игре' : 'Убрала из списка');
+  }
+
+  // add form
+  $('openAddBtn').addEventListener('click', ()=> $('addOverlay').classList.add('open'));
+  $('closeAdd').addEventListener('click', ()=> $('addOverlay').classList.remove('open'));
+  $('addOverlay').addEventListener('click', (e)=>{ if(e.target.id === 'addOverlay') $('addOverlay').classList.remove('open'); });
+
+  $('addForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const name = $('f-name').value.trim();
+    if(!name) return;
+    const waitSel = $('f-wait').value;
+    const it = {
+      id: uid(),
+      name,
+      url: $('f-url').value.trim(),
+      price: $('f-price').value.trim(),
+      photo: $('f-photo').value.trim(),
+      waitDays: waitSel === 'default' ? null : parseInt(waitSel,10),
+      addedAt: Date.now(),
+      decision: null,
+      archived: false
+    };
+    items.push(it);
+    await saveItems();
+    $('addForm').reset();
+    $('addOverlay').classList.remove('open');
+    render();
+    showToast('Положила в лист ожидания');
+  });
+
+  // settings
+  $('settingsBtn').addEventListener('click', ()=>{
+    $('s-wait').value = String(settings.defaultWaitDays);
+    $('s-hideToggle').classList.toggle('on', !settings.hideWaiting);
+    $('s-archiveAction').value = settings.archiveAction;
+    $('settingsOverlay').classList.add('open');
+  });
+  $('closeSettings').addEventListener('click', ()=> $('settingsOverlay').classList.remove('open'));
+  $('settingsOverlay').addEventListener('click', (e)=>{ if(e.target.id === 'settingsOverlay') $('settingsOverlay').classList.remove('open'); });
+
+  $('s-wait').addEventListener('change', async ()=>{
+    settings.defaultWaitDays = parseInt($('s-wait').value,10);
+    await saveSettings();
+    render();
+  });
+  $('s-hideToggle').addEventListener('click', async ()=>{
+    const nowOn = !$('s-hideToggle').classList.contains('on');
+    $('s-hideToggle').classList.toggle('on', nowOn);
+    settings.hideWaiting = !nowOn; // switch ON means "показывать" -> hideWaiting = false
+    await saveSettings();
+    render();
+  });
+  $('s-archiveAction').addEventListener('change', async ()=>{
+    settings.archiveAction = $('s-archiveAction').value;
+    await saveSettings();
+  });
+
+  $('archiveToggle').addEventListener('click', ()=>{
+    archiveOpen = !archiveOpen;
+    render();
+  });
+
+  (async function init(){
+    if(tg){
+      tg.ready();
+      tg.expand();
+      try{ tg.setHeaderColor('#EDE9E0'); }catch(e){}
+      try{ tg.setBackgroundColor('#EDE9E0'); }catch(e){}
+    }
+    await loadData();
+    render();
+  })();
+})();
+</script>
+</body>
+</html>
