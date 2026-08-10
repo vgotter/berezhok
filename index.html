@@ -33,7 +33,9 @@
     -webkit-font-smoothing:antialiased;
     min-height:100vh;
     padding-bottom:64px;
+    -webkit-text-size-adjust:100%;
   }
+  :focus-visible{outline:3px solid var(--waiting);outline-offset:3px;}
 
   .wrap{max-width:560px;margin:0 auto;padding:0 18px;}
 
@@ -60,7 +62,7 @@
   }
   .icon-btn{
     background:none;border:1px solid var(--line);border-radius:10px;
-    width:38px;height:38px;display:flex;align-items:center;justify-content:center;
+    width:44px;height:44px;display:flex;align-items:center;justify-content:center;
     cursor:pointer;color:var(--ink);flex:none;
   }
   .icon-btn:hover{background:var(--paper-raised);}
@@ -295,15 +297,19 @@
   .toggle-row .label{font-size:14px;font-weight:500;}
   .toggle-row .sub{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
   .switch{
-    width:42px;height:24px;border-radius:100px;background:var(--line);
-    position:relative;cursor:pointer;flex:none;border:none;
+    width:48px;height:44px;background:transparent;
+    position:relative;cursor:pointer;flex:none;border:none;padding:0;
   }
-  .switch.on{background:var(--waiting);}
+  .switch::before{
+    content:'';position:absolute;left:3px;top:10px;width:42px;height:24px;
+    border-radius:100px;background:var(--line);
+  }
+  .switch.on::before{background:var(--waiting);}
   .switch .dot{
-    position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;
+    position:absolute;top:13px;left:6px;width:18px;height:18px;border-radius:50%;
     background:#fff;transition:left .15s ease;
   }
-  .switch.on .dot{left:21px;}
+  .switch.on .dot{left:24px;}
 
   .channel-link{
     display:flex;align-items:center;gap:11px;margin-top:18px;padding:13px;
@@ -320,7 +326,36 @@
   .channel-sub{display:block;font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
   .channel-arrow{font-size:20px;color:var(--waiting);flex:none;}
 
-  .close-x{background:none;border:none;color:var(--ink-soft);cursor:pointer;padding:4px;}
+  .settings-links{margin-top:18px;border:1px solid var(--line);border-radius:13px;overflow:hidden;background:var(--paper-raised);}
+  .settings-link{
+    min-height:52px;width:100%;display:flex;align-items:center;gap:10px;
+    padding:11px 13px;border:0;border-bottom:1px solid var(--line);
+    background:transparent;color:var(--ink);text-decoration:none;text-align:left;
+    font:500 13.5px 'Inter',sans-serif;cursor:pointer;
+  }
+  .settings-link:last-child{border-bottom:0;}
+  .settings-link-icon{width:24px;text-align:center;font-size:16px;flex:none;}
+  .settings-link-copy{flex:1;min-width:0;}
+  .settings-link-title{display:block;}
+  .settings-link-sub{display:block;font-size:11px;font-weight:400;color:var(--ink-soft);margin-top:2px;}
+  .settings-link-arrow{font-size:20px;color:var(--ink-soft);flex:none;}
+  .settings-link.danger{color:var(--danger);}
+  .settings-link:disabled{opacity:.55;cursor:default;}
+  .version-note{text-align:center;color:var(--ink-soft);font:11px 'IBM Plex Mono',monospace;margin-top:13px;}
+  .help-intro{font-size:13.5px;line-height:1.55;color:var(--ink-soft);margin:-5px 0 16px;}
+  .help-step{display:flex;gap:11px;padding:12px 0;border-bottom:1px solid var(--line);}
+  .help-step:last-of-type{border-bottom:0;}
+  .help-number{width:28px;height:28px;border-radius:50%;background:var(--waiting-soft);color:var(--waiting);display:flex;align-items:center;justify-content:center;font:600 12px 'IBM Plex Mono',monospace;flex:none;}
+  .help-copy{font-size:13px;line-height:1.45;}
+  .help-copy strong{display:block;margin-bottom:2px;}
+  .help-footer{margin-top:16px;padding:13px;border-radius:12px;background:var(--waiting-soft);font-size:12.5px;line-height:1.5;color:var(--waiting);}
+  .privacy-copy{font-size:12.5px;line-height:1.55;color:var(--ink-soft);}
+  .privacy-copy h3{font-size:13.5px;color:var(--ink);margin:17px 0 5px;}
+  .privacy-copy p{margin:0 0 9px;}
+  .delete-warning{font-size:13px;line-height:1.5;color:var(--ink-soft);margin-bottom:14px;}
+  .delete-warning strong{color:var(--danger);}
+
+  .close-x{width:44px;height:44px;display:flex;align-items:center;justify-content:center;background:none;border:none;color:var(--ink-soft);cursor:pointer;padding:4px;}
   .close-x svg{width:20px;height:20px;}
 
   .toast{
@@ -332,6 +367,9 @@
   }
   .toast.show{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(-4px);}
   .toast-action{border:0;background:none;color:#DDE4DA;font:700 13px 'Inter',sans-serif;text-decoration:underline;cursor:pointer;padding:0;}
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
+  }
 </style>
 </head>
 <body>
@@ -399,9 +437,9 @@
 
 <!-- Add item sheet -->
 <div class="overlay" id="addOverlay">
-  <div class="sheet">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="addTitle">
     <div class="sheet-head">
-      <span class="sheet-title">Новая вещь</span>
+      <span class="sheet-title" id="addTitle">Новая вещь</span>
       <button class="close-x" id="closeAdd" aria-label="Закрыть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
     <form id="addForm">
@@ -477,9 +515,9 @@
 
 <!-- Item detail sheet -->
 <div class="overlay" id="detailOverlay">
-  <div class="sheet">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
     <div class="sheet-head">
-      <span class="sheet-title">Карточка вещи</span>
+      <span class="sheet-title" id="detailTitle">Карточка вещи</span>
       <button class="close-x" id="closeDetail" aria-label="Закрыть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
     <div class="detail-photo" id="detailPhoto"></div>
@@ -539,9 +577,9 @@
 
 <!-- Snooze sheet -->
 <div class="overlay" id="snoozeOverlay">
-  <div class="sheet">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="snoozeTitle">
     <div class="sheet-head">
-      <span class="sheet-title">Подождать ещё</span>
+      <span class="sheet-title" id="snoozeTitle">Подождать ещё</span>
       <button class="close-x" id="closeSnooze" aria-label="Закрыть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
     <div class="snooze-options">
@@ -556,9 +594,9 @@
 
 <!-- Settings sheet -->
 <div class="overlay" id="settingsOverlay">
-  <div class="sheet">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
     <div class="sheet-head">
-      <span class="sheet-title">Настройки</span>
+      <span class="sheet-title" id="settingsTitle">Настройки</span>
       <button class="close-x" id="closeSettings" aria-label="Закрыть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
 
@@ -603,7 +641,7 @@
       Когда срок ожидания закончится, бот пришлёт сообщение с вариантами решения.
     </div>
 
-    <a class="channel-link" id="channelLink" href="https://t.me/my_berezhok" target="_blank" rel="noopener">
+    <a class="channel-link" href="https://t.me/my_berezhok" data-telegram-link target="_blank" rel="noopener">
       <span class="channel-icon" aria-hidden="true">🌿</span>
       <span class="channel-copy">
         <span class="channel-title">Новости и помощь</span>
@@ -611,11 +649,116 @@
       </span>
       <span class="channel-arrow" aria-hidden="true">›</span>
     </a>
+
+    <div class="settings-links" aria-label="О Бережке">
+      <button class="settings-link" type="button" id="openHelp">
+        <span class="settings-link-icon" aria-hidden="true">?</span>
+        <span class="settings-link-copy">
+          <span class="settings-link-title">Как работает Бережок</span>
+          <span class="settings-link-sub">Короткая справка</span>
+        </span>
+        <span class="settings-link-arrow" aria-hidden="true">›</span>
+      </button>
+      <a class="settings-link" href="https://t.me/my_berezhok/8" data-telegram-link target="_blank" rel="noopener">
+        <span class="settings-link-icon" aria-hidden="true">✨</span>
+        <span class="settings-link-copy">
+          <span class="settings-link-title">Что нового в версии 0.10.0?</span>
+          <span class="settings-link-sub">Открыть пост с обновлением</span>
+        </span>
+        <span class="settings-link-arrow" aria-hidden="true">›</span>
+      </a>
+      <a class="settings-link" href="https://t.me/psyotter" data-telegram-link target="_blank" rel="noopener">
+        <span class="settings-link-icon" aria-hidden="true">✦</span>
+        <span class="settings-link-copy">
+          <span class="settings-link-title">Создательница Бережка</span>
+          <span class="settings-link-sub">@psyotter</span>
+        </span>
+        <span class="settings-link-arrow" aria-hidden="true">›</span>
+      </a>
+      <button class="settings-link" type="button" id="exportData">
+        <span class="settings-link-icon" aria-hidden="true">↓</span>
+        <span class="settings-link-copy">
+          <span class="settings-link-title">Скачать мои данные</span>
+          <span class="settings-link-sub">Карточки, настройки и фотографии</span>
+        </span>
+        <span class="settings-link-arrow" aria-hidden="true">›</span>
+      </button>
+      <button class="settings-link" type="button" id="openPrivacy">
+        <span class="settings-link-icon" aria-hidden="true">◇</span>
+        <span class="settings-link-copy">
+          <span class="settings-link-title">Конфиденциальность</span>
+          <span class="settings-link-sub">Какие данные хранит Бережок</span>
+        </span>
+        <span class="settings-link-arrow" aria-hidden="true">›</span>
+      </button>
+      <button class="settings-link danger" type="button" id="openDeleteAccount">
+        <span class="settings-link-icon" aria-hidden="true">×</span>
+        <span class="settings-link-copy">
+          <span class="settings-link-title">Удалить мои данные</span>
+          <span class="settings-link-sub">Полностью и без возможности отмены</span>
+        </span>
+        <span class="settings-link-arrow" aria-hidden="true">›</span>
+      </button>
+    </div>
+    <div class="version-note">Бережок <span id="appVersion">0.10.0</span></div>
   </div>
 </div>
 
-<div class="toast" id="toast"><span id="toastText"></span><button type="button" class="toast-action" id="toastAction" hidden></button></div>
+<!-- Help sheet -->
+<div class="overlay" id="helpOverlay">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+    <div class="sheet-head">
+      <span class="sheet-title" id="helpTitle">Как работает Бережок</span>
+      <button class="close-x" id="closeHelp" aria-label="Закрыть справку"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <p class="help-intro">Бережок — список на подумать, прежде чем купить.</p>
+    <div class="help-step"><span class="help-number">1</span><div class="help-copy"><strong>Добавьте хотелку</strong>Вручную или отправьте ссылку прямо в чат с ботом.</div></div>
+    <div class="help-step"><span class="help-number">2</span><div class="help-copy"><strong>Дайте ей время</strong>Выберите срок, за который первый импульс успеет немного остыть.</div></div>
+    <div class="help-step"><span class="help-number">3</span><div class="help-copy"><strong>Получите напоминание</strong>Когда срок закончится, Бережок вернётся с вопросом: всё ещё хочется?</div></div>
+    <div class="help-step"><span class="help-number">4</span><div class="help-copy"><strong>Примите спокойное решение</strong>Купить, отказаться, оставить в желаниях или подождать ещё.</div></div>
+    <div class="help-footer">Бережок ничего не запрещает, просто помогает сохранить внимание и деньги для того, что правда радует.</div>
+  </div>
+</div>
 
-<script src="app.js?v=20260810-8"></script>
+<!-- Privacy sheet -->
+<div class="overlay" id="privacyOverlay">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="privacyTitle">
+    <div class="sheet-head">
+      <span class="sheet-title" id="privacyTitle">Конфиденциальность</span>
+      <button class="close-x" id="closePrivacy" aria-label="Закрыть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div class="privacy-copy">
+      <p>Бережок хранит только то, что нужно для его работы: числовой Telegram ID, настройки, карточки вещей, ссылки, цены, заметки, решения и загруженные фотографии.</p>
+      <h3>Зачем это нужно</h3>
+      <p>Чтобы синхронизировать список между устройствами, показывать фотографии, считать итоги и вовремя присылать напоминания.</p>
+      <h3>Кому передаются данные</h3>
+      <p>Бережок не продаёт пользовательские данные и не использует содержимое карточек для рекламы. Данные хранятся на сервере приложения.</p>
+      <h3>Удаление</h3>
+      <p>Все активные данные и фотографии можно удалить в настройках. В резервных копиях они могут сохраняться до 30 дней, после чего копии удаляются автоматически.</p>
+      <h3>Связь</h3>
+      <p>Если возник вопрос о данных, напишите в сообщения канала <a href="https://t.me/my_berezhok" data-telegram-link>@my_berezhok</a>.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Delete account sheet -->
+<div class="overlay" id="deleteAccountOverlay">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="deleteAccountTitle">
+    <div class="sheet-head">
+      <span class="sheet-title" id="deleteAccountTitle">Удалить мои данные</span>
+      <button class="close-x" id="closeDeleteAccount" aria-label="Закрыть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <p class="delete-warning"><strong>Это действие нельзя отменить.</strong> Будут удалены все карточки, фотографии, черновики и настройки.</p>
+    <div class="field">
+      <label for="deleteConfirmation">Для подтверждения напишите УДАЛИТЬ</label>
+      <input id="deleteConfirmation" type="text" autocomplete="off" spellcheck="false">
+    </div>
+    <button type="button" class="danger-btn" id="confirmDeleteAccount" disabled>Удалить всё навсегда</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"><span id="toastText"></span><button type="button" class="toast-action" id="toastAction" hidden></button></div>
+
+<script src="app.js?v=20260810-9"></script>
 </body>
 </html>

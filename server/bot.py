@@ -3,6 +3,7 @@ import io
 import logging
 import os
 import re
+import time
 import uuid
 from contextlib import suppress
 from urllib.parse import urlparse
@@ -16,7 +17,7 @@ from aiogram.types import (
     Message,
     WebAppInfo,
 )
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandStart
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from db import DB_PATH, get_conn, init_db, new_id, now_ms
@@ -30,6 +31,7 @@ from product_metadata import (
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 WEBAPP_URL = os.environ.get("WEBAPP_URL", "https://vgotter.github.io/berezhok/")
 CHECK_INTERVAL_SECONDS = int(os.environ.get("CHECK_INTERVAL_SECONDS", "30"))
+OWNER_USERNAME = os.environ.get("OWNER_USERNAME", "psyotter").lstrip("@").lower()
 PHOTO_DIR = os.environ.get(
     "PHOTO_DIR", os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), "uploads")
 )
@@ -55,6 +57,7 @@ WELCOME_TEXT = (
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 logger = logging.getLogger(__name__)
+monitor_alert_times = {}
 
 init_db()
 os.makedirs(PHOTO_DIR, exist_ok=True)
@@ -74,6 +77,74 @@ async def start(message: Message):
         WELCOME_TEXT,
         parse_mode="HTML",
         reply_markup=open_app_keyboard(),
+    )
+
+
+def monitor_chat_id():
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT value FROM app_config WHERE key='monitor_chat_id'"
+    ).fetchone()
+    conn.close()
+    try:
+        return int(row["value"]) if row else None
+    except (TypeError, ValueError):
+        return None
+
+
+async def send_monitor_alert(key: str, text: str, cooldown_seconds: int = 3600):
+    chat_id = monitor_chat_id()
+    if not chat_id:
+        return
+    now = time.monotonic()
+    if now - monitor_alert_times.get(key, 0) < cooldown_seconds:
+        return
+    try:
+        await bot.send_message(chat_id, text)
+        monitor_alert_times[key] = now
+    except Exception:
+        logger.exception("Не удалось отправить сообщение в Пультовую")
+
+
+@dp.message(Command("monitor_here"))
+async def register_monitor_chat(message: Message):
+    username = (message.from_user.username or "").lower()
+    if username != OWNER_USERNAME:
+        await message.answer("Эту команду может использовать только создательница Бережка.")
+        return
+    conn = get_conn()
+    conn.execute(
+        "INSERT INTO app_config (key, value) VALUES ('monitor_chat_id', ?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (str(message.chat.id),),
+    )
+    conn.commit()
+    conn.close()
+    await message.answer(
+        "🟢 Пультовая подключена. Сюда будут приходить технические сигналы Бережка."
+    )
+
+
+@dp.message(Command("monitor_status"))
+async def monitor_status(message: Message):
+    username = (message.from_user.username or "").lower()
+    if username != OWNER_USERNAME:
+        return
+    conn = get_conn()
+    heartbeat = conn.execute(
+        "SELECT value FROM app_config WHERE key='bot_heartbeat_ms'"
+    ).fetchone()
+    backup = conn.execute(
+        "SELECT value FROM app_config WHERE key='last_backup_ms'"
+    ).fetchone()
+    conn.close()
+    now = now_ms()
+    bot_age = round((now - int(heartbeat["value"])) / 1000) if heartbeat else None
+    backup_age = round((now - int(backup["value"])) / 3600000, 1) if backup else None
+    await message.answer(
+        "🟢 Бот работает"
+        + (f" · последний сигнал {bot_age} сек. назад" if bot_age is not None else "")
+        + (f"\n🛟 Последний бэкап {backup_age} ч. назад" if backup_age is not None else "")
     )
 
 
@@ -435,6 +506,12 @@ async def reminder_loop():
         try:
             conn = get_conn()
             now = now_ms()
+            conn.execute(
+                "INSERT INTO app_config (key, value) VALUES ('bot_heartbeat_ms', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (str(now),),
+            )
+            conn.commit()
             rows = conn.execute(
                 """
                 SELECT items.*,
@@ -486,8 +563,17 @@ async def reminder_loop():
                         logger.exception(
                             "Не удалось отправить напоминание для item_id=%s", r["id"]
                         )
+                        await send_monitor_alert(
+                            f"reminder:{r['id']}",
+                            "🟠 Бережок не смог отправить одно из напоминаний. "
+                            "Он попробует снова автоматически.",
+                        )
         except Exception:
             logger.exception("Ошибка цикла напоминаний")
+            await send_monitor_alert(
+                "reminder-loop",
+                "🔴 Ошибка цикла напоминаний. Проверь журнал berezhok-bot.",
+            )
         finally:
             if conn is not None:
                 conn.close()
@@ -496,6 +582,9 @@ async def reminder_loop():
 
 async def main():
     reminder_task = asyncio.create_task(reminder_loop())
+    await send_monitor_alert(
+        "bot-started", "🟢 Бот Бережка запущен и проверяет напоминания.", 0
+    )
     try:
         await dp.start_polling(bot)
     finally:

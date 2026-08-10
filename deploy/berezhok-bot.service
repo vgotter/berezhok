@@ -1,0 +1,13 @@
+[Unit]
+Description=Berezhok Bot
+After=network.target berezhok-api.service
+
+[Service]
+WorkingDirectory=/root/berezhok/server
+EnvironmentFile=/root/berezhok/server/.env
+ExecStart=/root/berezhok/server/venv/bin/python bot.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

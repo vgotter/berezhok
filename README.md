@@ -58,10 +58,83 @@ systemctl status berezhok-backup.service --no-pager
 ls -lh /root/backups/berezhok
 ```
 
+Проверка, что конкретный архив действительно читается, база цела, а фотографии
+не повреждены:
+
+```bash
+cd /root/berezhok/server
+source venv/bin/activate
+python verify_backup.py /root/backups/berezhok/ИМЯ-АРХИВА.tar.gz
+```
+
 Проверка расписания:
 
 ```bash
 systemctl list-timers berezhok-backup.timer --no-pager
+```
+
+### Внешняя копия в Timeweb S3
+
+Для защиты от потери всей виртуальной машины архив можно автоматически отправлять
+в приватный S3-бакет. Используется совместимый с S3 адрес
+`https://s3.twcstorage.ru`. Рекомендуется создать отдельного пользователя только
+для бакета Бережка с правами «Чтение и запись», а не использовать главный ключ
+аккаунта.
+
+В `server/.env` добавляются значения из панели Timeweb Cloud:
+
+```env
+S3_BUCKET=имя-приватного-бакета
+S3_ENDPOINT=https://s3.twcstorage.ru
+S3_REGION=ru-1
+S3_PREFIX=berezhok
+S3_ACCESS_KEY=ключ-дополнительного-пользователя
+S3_SECRET_KEY=секрет-дополнительного-пользователя
+```
+
+Секреты нельзя добавлять в Git или присылать в публичные сообщения. После
+настройки нужно вручную запустить `berezhok-backup.service` и убедиться, что новый
+архив появился в бакете. Для бакета следует настроить жизненный цикл с удалением
+объектов старше 30 дней.
+
+Официальные инструкции Timeweb Cloud:
+
+- https://timeweb.cloud/docs/s3-storage/manage-storage/create-bucket
+- https://timeweb.cloud/docs/s3-storage/manage-storage/additional-users
+- https://timeweb.cloud/docs/s3-storage/manage-storage/manage-buckets
+
+### Мониторинг
+
+`/api/health` возвращает `200`, только если доступны база, бот, свежая локальная
+копия и достаточный объём диска. После настройки S3 дополнительно проверяется
+свежесть внешней копии. Для внешней проверки используется HTTP GET:
+
+```text
+https://api.my-berezhok-bot.net.ru/api/health
+```
+
+Timeweb Cloud Monitoring умеет проверять этот адрес извне и присылать сообщения
+о сбое и восстановлении в Telegram. Внутренняя группа регистрируется командой
+`/monitor_here`, которую принимает только аккаунт из `OWNER_USERNAME`.
+
+Официальные инструкции:
+
+- https://timeweb.cloud/docs/monitoring/create
+- https://timeweb.cloud/docs/monitoring/manage
+- https://timeweb.cloud/docs/account-management/notifications
+
+### Конфигурация сервисов
+
+В `deploy/` хранятся systemd-конфигурации API, бота и ежедневного бэкапа. После
+их изменения:
+
+```bash
+cp /root/berezhok/deploy/berezhok-api.service /etc/systemd/system/
+cp /root/berezhok/deploy/berezhok-bot.service /etc/systemd/system/
+cp /root/berezhok/deploy/berezhok-backup.service /etc/systemd/system/
+cp /root/berezhok/deploy/berezhok-backup.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now berezhok-api berezhok-bot berezhok-backup.timer
 ```
 
 Проверка миграции и API фотографий:

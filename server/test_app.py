@@ -7,8 +7,10 @@ import sqlite3
 import sys
 import tempfile
 import tarfile
+import time
 import unittest
 import urllib.parse
+import zipfile
 from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
@@ -68,11 +70,12 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from app import app  # noqa: E402
 import backup  # noqa: E402
+import verify_backup  # noqa: E402
 
 
-def auth_headers(user_id):
+def auth_headers(user_id, auth_date=None):
     fields = {
-        "auth_date": "1786310000",
+        "auth_date": str(auth_date or int(time.time())),
         "query_id": f"query-{user_id}",
         "user": json.dumps({"id": user_id}, separators=(",", ":")),
     }
@@ -110,6 +113,12 @@ class PhotoApiTest(unittest.TestCase):
         self.assertEqual(old_item[0], "Старая вещь")
         self.assertEqual(old_settings, (14.0, "she"))
         self.assertEqual(draft_table[0], "link_drafts")
+        conn = sqlite3.connect(DB_PATH)
+        config_table = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='app_config'"
+        ).fetchone()
+        conn.close()
+        self.assertEqual(config_table[0], "app_config")
 
     def test_02_existing_json_endpoint_still_works(self):
         response = self.client.post(
@@ -311,8 +320,9 @@ class PhotoApiTest(unittest.TestCase):
 
     def test_12_backup_contains_database_and_photos(self):
         os.makedirs(PHOTO_DIR, exist_ok=True)
-        with open(os.path.join(PHOTO_DIR, "sample.jpg"), "wb") as photo:
-            photo.write(b"test-photo")
+        Image.new("RGB", (30, 30), (88, 112, 95)).save(
+            os.path.join(PHOTO_DIR, "sample.jpg"), "JPEG"
+        )
         created = backup.create_backup(
             datetime(2026, 8, 10, 12, 0, tzinfo=timezone.utc)
         )
@@ -321,6 +331,89 @@ class PhotoApiTest(unittest.TestCase):
             names = archive.getnames()
         self.assertIn("berezhok.db", names)
         self.assertIn("uploads/sample.jpg", names)
+        verified = verify_backup.verify_backup(created)
+        self.assertGreaterEqual(verified["items"], 1)
+        self.assertGreaterEqual(verified["photos"], 1)
+
+    def test_13_expired_telegram_authorization_is_rejected(self):
+        response = self.client.get(
+            "/api/state",
+            headers=auth_headers(101, int(time.time()) - 90000),
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_14_invalid_settings_are_rejected(self):
+        bad_action = self.client.put(
+            "/api/settings",
+            headers=auth_headers(101),
+            json={"archiveAction": "erase-everything"},
+        )
+        bad_time = self.client.put(
+            "/api/settings",
+            headers=auth_headers(101),
+            json={"defaultWaitDays": -1},
+        )
+        self.assertEqual(bad_action.status_code, 422)
+        self.assertEqual(bad_time.status_code, 422)
+
+    def test_15_account_export_contains_json_and_photos(self):
+        source = io.BytesIO()
+        Image.new("RGB", (100, 100), (88, 112, 95)).save(source, "PNG")
+        created = self.client.post(
+            "/api/items-with-photo",
+            headers=auth_headers(303),
+            data={"name": "Экспортируемая вещь"},
+            files={"photo": ("source.png", source.getvalue(), "image/png")},
+        ).json()
+        response = self.client.get(
+            "/api/account/export", headers=auth_headers(303)
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-type"], "application/zip")
+        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+            names = archive.namelist()
+            payload = json.loads(archive.read("berezhok-data.json"))
+        self.assertIn(f"photos/{created['id']}.jpg", names)
+        self.assertEqual(payload["telegramUserId"], 303)
+        self.assertEqual(payload["items"][0]["name"], "Экспортируемая вещь")
+
+    def test_16_account_deletion_requires_confirmation_and_removes_everything(self):
+        denied = self.client.post(
+            "/api/account/delete",
+            headers=auth_headers(303),
+            json={"confirmation": "удалить"},
+        )
+        self.assertEqual(denied.status_code, 422)
+        deleted = self.client.post(
+            "/api/account/delete",
+            headers=auth_headers(303),
+            json={"confirmation": "УДАЛИТЬ"},
+        )
+        self.assertEqual(deleted.status_code, 200)
+        conn = sqlite3.connect(DB_PATH)
+        counts = [
+            conn.execute(f"SELECT COUNT(*) FROM {table} WHERE user_id=303").fetchone()[0]
+            for table in ("items", "settings", "pending_links", "link_drafts")
+        ]
+        conn.close()
+        self.assertEqual(counts, [0, 0, 0, 0])
+
+    def test_17_health_checks_database_bot_backup_and_disk(self):
+        now = str(int(time.time() * 1000))
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute(
+            "INSERT OR REPLACE INTO app_config (key, value) VALUES (?,?)",
+            ("bot_heartbeat_ms", now),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO app_config (key, value) VALUES (?,?)",
+            ("last_backup_ms", now),
+        )
+        conn.commit()
+        conn.close()
+        response = self.client.get("/api/health")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(response.json()["ok"])
 
 
 if __name__ == "__main__":

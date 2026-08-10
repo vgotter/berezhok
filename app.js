@@ -1,7 +1,7 @@
 (function(){
   const DAY = 86400000;
   const API_BASE = 'https://api.my-berezhok-bot.net.ru';
-  const CHANNEL_URL = 'https://t.me/my_berezhok';
+  const APP_VERSION = '0.10.0';
   const CURRENCIES = [
     ['₽','₽ рубль'], ['$','$ доллар'], ['€','€ евро'], ['£','£ фунт'],
     ['₾','₾ лари'], ['֏','֏ драм'], ['₺','₺ лира'], ['₪','₪ шекель'],
@@ -650,12 +650,18 @@
   function openAdd(url){
     if(url) $('f-url').value = url;
     $('addOverlay').classList.add('open');
+    $('closeAdd').focus();
+  }
+
+  function closeAdd(){
+    $('addOverlay').classList.remove('open');
+    $('openAddBtn').focus();
   }
 
   $('openAddBtn').addEventListener('click', ()=>openAdd());
-  $('closeAdd').addEventListener('click', ()=>$('addOverlay').classList.remove('open'));
+  $('closeAdd').addEventListener('click', closeAdd);
   $('addOverlay').addEventListener('click', event=>{
-    if(event.target.id === 'addOverlay') $('addOverlay').classList.remove('open');
+    if(event.target.id === 'addOverlay') closeAdd();
   });
 
   $('f-photo').addEventListener('change', ()=>{
@@ -818,6 +824,11 @@
     });
   });
 
+  function closeSettings(){
+    $('settingsOverlay').classList.remove('open');
+    $('settingsBtn').focus();
+  }
+
   $('settingsBtn').addEventListener('click', ()=>{
     $('s-pronoun').value = settings.selfPronoun;
     $('s-wait').value = String(settings.defaultWaitDays);
@@ -825,10 +836,11 @@
     $('s-hideToggle').setAttribute('aria-checked', String(!settings.hideWaiting));
     $('s-archiveAction').value = settings.archiveAction;
     $('settingsOverlay').classList.add('open');
+    $('closeSettings').focus();
   });
-  $('closeSettings').addEventListener('click', ()=>$('settingsOverlay').classList.remove('open'));
+  $('closeSettings').addEventListener('click', closeSettings);
   $('settingsOverlay').addEventListener('click', event=>{
-    if(event.target.id === 'settingsOverlay') $('settingsOverlay').classList.remove('open');
+    if(event.target.id === 'settingsOverlay') closeSettings();
   });
   $('s-pronoun').addEventListener('change', async ()=>{
     settings.selfPronoun = $('s-pronoun').value;
@@ -852,11 +864,120 @@
     settings.archiveAction = $('s-archiveAction').value;
     await saveSettings({ archiveAction: settings.archiveAction });
   });
-  $('channelLink').addEventListener('click', event=>{
-    if(tg && typeof tg.openTelegramLink === 'function'){
-      event.preventDefault();
-      $('settingsOverlay').classList.remove('open');
-      tg.openTelegramLink(CHANNEL_URL);
+  document.querySelectorAll('[data-telegram-link]').forEach(link=>{
+    link.addEventListener('click', event=>{
+      if(tg && typeof tg.openTelegramLink === 'function'){
+        event.preventDefault();
+        $('settingsOverlay').classList.remove('open');
+        tg.openTelegramLink(link.href);
+      }
+    });
+  });
+  $('openHelp').addEventListener('click', ()=>{
+    $('settingsOverlay').classList.remove('open');
+    $('helpOverlay').classList.add('open');
+    $('closeHelp').focus();
+  });
+  function closeHelp(){
+    $('helpOverlay').classList.remove('open');
+    $('settingsOverlay').classList.add('open');
+    $('openHelp').focus();
+  }
+  $('closeHelp').addEventListener('click', closeHelp);
+  $('helpOverlay').addEventListener('click', event=>{
+    if(event.target.id === 'helpOverlay') closeHelp();
+  });
+  $('exportData').addEventListener('click', async ()=>{
+    const button = $('exportData');
+    button.disabled = true;
+    try{
+      const response = await fetch(API_BASE + '/api/account/export', {
+        headers: { 'X-Telegram-Init-Data': initData }
+      });
+      if(!response.ok) throw new Error('Export failed');
+      const blob = await response.blob();
+      const file = new File([blob], 'berezhok-data.zip', { type: 'application/zip' });
+      if(navigator.canShare && navigator.canShare({ files: [file] })){
+        await navigator.share({ files: [file], title: 'Данные Бережка' });
+      }else{
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'berezhok-data.zip';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(()=>URL.revokeObjectURL(url), 1000);
+      }
+      showToast('Архив с данными готов');
+    }catch(error){
+      if(error && error.name !== 'AbortError') showToast('Не получилось скачать данные');
+    }finally{
+      button.disabled = false;
+    }
+  });
+  function openInfoOverlay(id, focusId){
+    $('settingsOverlay').classList.remove('open');
+    $(id).classList.add('open');
+    $(focusId).focus();
+  }
+  function closeInfoOverlay(id, returnFocusId){
+    $(id).classList.remove('open');
+    $('settingsOverlay').classList.add('open');
+    $(returnFocusId).focus();
+  }
+  $('openPrivacy').addEventListener('click', ()=>openInfoOverlay('privacyOverlay', 'closePrivacy'));
+  $('closePrivacy').addEventListener('click', ()=>closeInfoOverlay('privacyOverlay', 'openPrivacy'));
+  $('privacyOverlay').addEventListener('click', event=>{
+    if(event.target.id === 'privacyOverlay') closeInfoOverlay('privacyOverlay', 'openPrivacy');
+  });
+  $('openDeleteAccount').addEventListener('click', ()=>{
+    $('deleteConfirmation').value = '';
+    $('confirmDeleteAccount').disabled = true;
+    openInfoOverlay('deleteAccountOverlay', 'closeDeleteAccount');
+  });
+  function closeDeleteAccount(){
+    closeInfoOverlay('deleteAccountOverlay', 'openDeleteAccount');
+  }
+  $('closeDeleteAccount').addEventListener('click', closeDeleteAccount);
+  $('deleteAccountOverlay').addEventListener('click', event=>{
+    if(event.target.id === 'deleteAccountOverlay') closeDeleteAccount();
+  });
+  $('deleteConfirmation').addEventListener('input', ()=>{
+    $('confirmDeleteAccount').disabled = $('deleteConfirmation').value.trim() !== 'УДАЛИТЬ';
+  });
+
+  document.addEventListener('keydown', event=>{
+    if(event.key !== 'Escape') return;
+    if($('deleteAccountOverlay').classList.contains('open')) closeDeleteAccount();
+    else if($('privacyOverlay').classList.contains('open')) closeInfoOverlay('privacyOverlay', 'openPrivacy');
+    else if($('helpOverlay').classList.contains('open')) closeHelp();
+    else if($('snoozeOverlay').classList.contains('open')) closeSnooze();
+    else if($('detailOverlay').classList.contains('open')) closeDetail();
+    else if($('addOverlay').classList.contains('open')) closeAdd();
+    else if($('settingsOverlay').classList.contains('open')) closeSettings();
+  });
+  $('confirmDeleteAccount').addEventListener('click', async ()=>{
+    const button = $('confirmDeleteAccount');
+    if($('deleteConfirmation').value.trim() !== 'УДАЛИТЬ') return;
+    button.disabled = true;
+    try{
+      await api('/api/account/delete', {
+        method: 'POST', body: JSON.stringify({ confirmation: 'УДАЛИТЬ' })
+      });
+      for(const objectUrl of photoObjectUrls.values()) URL.revokeObjectURL(objectUrl);
+      photoObjectUrls.clear();
+      items = [];
+      settings = {
+        defaultWaitDays: 7, hideWaiting: false, archiveAction: 'archive',
+        archiveAfterDays: 30, selfPronoun: 'she'
+      };
+      $('deleteAccountOverlay').classList.remove('open');
+      render();
+      showToast('Все данные удалены');
+    }catch(error){
+      showToast('Не получилось удалить данные');
+      button.disabled = false;
     }
   });
 
@@ -876,6 +997,7 @@
   });
 
   (async function init(){
+    $('appVersion').textContent = APP_VERSION;
     $('d-currency').innerHTML = CURRENCIES.map(([value,label])=>`<option value="${escAttr(value)}">${escHTML(label)}</option>`).join('');
     if(tg){
       tg.ready();
