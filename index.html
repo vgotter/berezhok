@@ -215,6 +215,9 @@
   .field-note{font-size:11.5px;color:var(--ink-soft);margin-top:5px;}
   .two-col{display:flex;gap:10px;}
   .two-col .field{flex:1;}
+  .price-row{display:flex;gap:8px;}
+  .price-row input{flex:1;min-width:0;}
+  .price-row select{flex:none;width:118px;}
   .submit-btn{
     width:100%;background:var(--ink);color:var(--paper-raised);
     border:none;border-radius:12px;padding:13px;font-size:15px;font-weight:600;
@@ -313,20 +316,35 @@
         <label for="f-url">Ссылка (необязательно)</label>
         <input type="url" id="f-url" placeholder="https://…">
       </div>
-      <div class="two-col">
-        <div class="field">
-          <label for="f-price">Цена</label>
-          <input type="text" id="f-price" placeholder="2 400 ₽">
-        </div>
-        <div class="field">
-          <label for="f-photo">Фото (ссылка)</label>
-          <input type="url" id="f-photo" placeholder="https://…">
+      <div class="field">
+        <label for="f-price">Цена</label>
+        <div class="price-row">
+          <input type="number" id="f-price" placeholder="2400" inputmode="decimal" min="0" step="any">
+          <select id="f-currency">
+            <option value="₽">₽ рубль</option>
+            <option value="$">$ доллар</option>
+            <option value="€">€ евро</option>
+            <option value="£">£ фунт</option>
+            <option value="₾">₾ лари</option>
+            <option value="֏">֏ драм</option>
+            <option value="₺">₺ лира</option>
+            <option value="₪">₪ шекель</option>
+            <option value="₸">₸ тенге</option>
+            <option value="₴">₴ гривна</option>
+            <option value="сом">сом кыргызский</option>
+            <option value="сум">сум узбекский</option>
+            <option value="дин">дин сербский</option>
+            <option value="AED">AED дирхам</option>
+            <option value="Br">Br бел. рубль</option>
+            <option value="¥">¥ юань</option>
+          </select>
         </div>
       </div>
       <div class="field">
         <label for="f-wait">Подождать сколько</label>
         <select id="f-wait">
           <option value="default">Как обычно (настройки)</option>
+          <option value="0.0417">Час (для теста)</option>
           <option value="3">3 дня</option>
           <option value="7">Неделю</option>
           <option value="14">Две недели</option>
@@ -349,6 +367,7 @@
     <div class="field">
       <label for="s-wait">Сколько ждать по умолчанию</label>
       <select id="s-wait">
+        <option value="0.0417">Час (для теста)</option>
         <option value="3">3 дня</option>
         <option value="7">Неделю</option>
         <option value="14">Две недели</option>
@@ -390,8 +409,6 @@
 
   const $ = (id) => document.getElementById(id);
 
-  function uid(){ return 'i' + Date.now() + Math.random().toString(36).slice(2,8); }
-
   function showToast(msg){
     const t = $('toast');
     t.textContent = msg;
@@ -401,75 +418,44 @@
   }
 
   // --- storage layer ---
-  // Внутри Telegram данные хранятся в CloudStorage (привязано к пользователю,
-  // переживёт смену телефона). Если файл открыт не в Telegram (например, при
-  // локальной проверке в браузере) — используется localStorage, просто чтобы
-  // было чем проверить логику. В боевом виде это работает только в Telegram.
-  const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
-  const hasCloud = !!(tg && tg.CloudStorage);
+  // Данные теперь живут на сервере (не в Telegram CloudStorage) — это нужно,
+  // чтобы бот сам мог по расписанию проверять сроки и слать напоминания.
+  // ЗАМЕНИ на адрес своего сервера после деплоя на TimeWeb.
+  const API_BASE = 'https://ЗАМЕНИ-НА-СВОЙ-ДОМЕН';
 
-  function cloudGet(key){
-    return new Promise((resolve)=>{
-      if(hasCloud){
-        tg.CloudStorage.getItem(key, (err, value)=> resolve(err ? '' : (value || '')));
-      } else {
-        resolve(localStorage.getItem(key) || '');
-      }
-    });
-  }
-  function cloudSet(key, value){
-    return new Promise((resolve, reject)=>{
-      if(hasCloud){
-        tg.CloudStorage.setItem(key, value, (err, ok)=> err ? reject(err) : resolve(ok));
-      } else {
-        localStorage.setItem(key, value);
-        resolve(true);
-      }
-    });
+  const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+  const initData = tg ? tg.initData : '';
+
+  async function api(path, options){
+    const res = await fetch(API_BASE + path, Object.assign({
+      headers: Object.assign({
+        'Content-Type': 'application/json',
+        'X-Telegram-Init-Data': initData
+      }, (options && options.headers) || {})
+    }, options));
+    if(!res.ok) throw new Error('API error ' + res.status);
+    return res.status === 204 ? null : res.json();
   }
 
   async function loadData(){
     try{
-      const raw = await cloudGet('items');
-      items = raw ? JSON.parse(raw) : [];
-    }catch(e){ items = []; }
-    try{
-      const raw = await cloudGet('settings');
-      if(raw) settings = Object.assign(settings, JSON.parse(raw));
-    }catch(e){ /* keep defaults */ }
-  }
-
-  async function saveItems(){
-    try{ await cloudSet('items', JSON.stringify(items)); }
-    catch(e){ showToast('Не получилось сохранить :('); }
-  }
-  async function saveSettings(){
-    try{ await cloudSet('settings', JSON.stringify(settings)); }
-    catch(e){ showToast('Не получилось сохранить настройки'); }
-  }
-
-  function sweepExpired(){
-    const now = Date.now();
-    let changed = false;
-    items.forEach(it=>{
-      if(it.decision || it.archived) return;
-      const wait = (it.waitDays || settings.defaultWaitDays) * DAY;
-      const readyAt = it.addedAt + wait;
-      if(now >= readyAt + settings.archiveAfterDays * DAY){
-        changed = true;
-        if(settings.archiveAction === 'delete'){
-          it._toDelete = true;
-        }else{
-          it.archived = true;
-          it.decision = 'expired';
-          it.decidedAt = now;
-        }
-      }
-    });
-    if(changed){
-      items = items.filter(it => !it._toDelete);
-      saveItems();
+      const state = await api('/api/state');
+      items = state.items;
+      settings = Object.assign(settings, state.settings);
+    }catch(e){
+      showToast('Не удалось загрузить данные — проверь связь с сервером');
     }
+  }
+
+  async function createItemOnServer(payload){
+    return api('/api/items', { method: 'POST', body: JSON.stringify(payload) });
+  }
+  async function decideOnServer(id, decision){
+    return api(`/api/items/${id}/decide`, { method: 'POST', body: JSON.stringify({ decision }) });
+  }
+  async function saveSettings(partial){
+    try{ await api('/api/settings', { method: 'PUT', body: JSON.stringify(partial) }); }
+    catch(e){ showToast('Не получилось сохранить настройки'); }
   }
 
   function fmtDays(n){
@@ -525,12 +511,18 @@
     </div>`;
   }
 
+  function fmtRemaining(ms){
+    if(ms < 3600000) return Math.max(1, Math.round(ms / 60000)) + ' мин';
+    if(ms < DAY) return Math.max(1, Math.round(ms / 3600000)) + ' ч';
+    return fmtDays(Math.ceil(ms / DAY));
+  }
+
   function renderWaitingCard(it){
     const wait = (it.waitDays || settings.defaultWaitDays);
     const waitMs = wait * DAY;
     const elapsed = Date.now() - it.addedAt;
     const pct = Math.max(3, Math.min(100, Math.round((elapsed / waitMs) * 100)));
-    const daysLeft = Math.max(0, Math.ceil((waitMs - elapsed) / DAY));
+    const msLeft = Math.max(0, waitMs - elapsed);
     const nameEl = it.url
       ? `<a class="card-name" href="${escAttr(it.url)}" target="_blank" rel="noopener">${escHTML(it.name)}</a>`
       : `<span class="card-name">${escHTML(it.name)}</span>`;
@@ -545,7 +537,7 @@
       </div>
       <div class="gauge-row">
         <div class="gauge"><div class="gauge-fill" style="width:${pct}%"></div></div>
-        <span class="gauge-label">ещё ${fmtDays(daysLeft)}</span>
+        <span class="gauge-label">ещё ${fmtRemaining(msLeft)}</span>
       </div>
     </div>`;
   }
@@ -573,7 +565,6 @@
   }
 
   function render(){
-    sweepExpired();
     const ready = items.filter(it => itemStatus(it) === 'ready');
     const waiting = items.filter(it => itemStatus(it) === 'waiting');
     const archived = items.filter(it => itemStatus(it) === 'archived');
@@ -616,14 +607,14 @@
   async function onDecision(e){
     const id = e.currentTarget.getAttribute('data-id');
     const action = e.currentTarget.getAttribute('data-action');
-    const it = items.find(x => x.id === id);
-    if(!it) return;
-    it.decision = action;
-    it.decidedAt = Date.now();
-    it.archived = true;
-    await saveItems();
-    render();
-    showToast(action === 'keep' ? 'Записала — она всё ещё в игре' : 'Убрала из списка');
+    try{
+      await decideOnServer(id, action);
+      await loadData();
+      render();
+      showToast(action === 'keep' ? 'Записала — она всё ещё в игре' : 'Убрала из списка');
+    }catch(err){
+      showToast('Не получилось сохранить — проверь связь');
+    }
   }
 
   // add form
@@ -636,23 +627,27 @@
     const name = $('f-name').value.trim();
     if(!name) return;
     const waitSel = $('f-wait').value;
-    const it = {
-      id: uid(),
+    const payload = {
       name,
       url: $('f-url').value.trim(),
-      price: $('f-price').value.trim(),
-      photo: $('f-photo').value.trim(),
-      waitDays: waitSel === 'default' ? null : parseInt(waitSel,10),
-      addedAt: Date.now(),
-      decision: null,
-      archived: false
+      price: (function(){
+        const v = $('f-price').value.trim();
+        if(!v) return '';
+        const cur = $('f-currency').value;
+        return cur === '$' || cur === '£' ? cur + v : v + ' ' + cur;
+      })(),
+      waitDays: waitSel === 'default' ? null : parseFloat(waitSel)
     };
-    items.push(it);
-    await saveItems();
-    $('addForm').reset();
-    $('addOverlay').classList.remove('open');
-    render();
-    showToast('Положила в лист ожидания');
+    try{
+      await createItemOnServer(payload);
+      $('addForm').reset();
+      $('addOverlay').classList.remove('open');
+      await loadData();
+      render();
+      showToast('Положила в лист ожидания');
+    }catch(err){
+      showToast('Не получилось сохранить — проверь связь');
+    }
   });
 
   // settings
@@ -666,20 +661,20 @@
   $('settingsOverlay').addEventListener('click', (e)=>{ if(e.target.id === 'settingsOverlay') $('settingsOverlay').classList.remove('open'); });
 
   $('s-wait').addEventListener('change', async ()=>{
-    settings.defaultWaitDays = parseInt($('s-wait').value,10);
-    await saveSettings();
+    settings.defaultWaitDays = parseFloat($('s-wait').value);
+    await saveSettings({ defaultWaitDays: settings.defaultWaitDays });
     render();
   });
   $('s-hideToggle').addEventListener('click', async ()=>{
     const nowOn = !$('s-hideToggle').classList.contains('on');
     $('s-hideToggle').classList.toggle('on', nowOn);
     settings.hideWaiting = !nowOn; // switch ON means "показывать" -> hideWaiting = false
-    await saveSettings();
+    await saveSettings({ hideWaiting: settings.hideWaiting });
     render();
   });
   $('s-archiveAction').addEventListener('change', async ()=>{
     settings.archiveAction = $('s-archiveAction').value;
-    await saveSettings();
+    await saveSettings({ archiveAction: settings.archiveAction });
   });
 
   $('archiveToggle').addEventListener('click', ()=>{
