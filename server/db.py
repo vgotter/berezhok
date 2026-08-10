@@ -32,6 +32,17 @@ def init_db():
         )
         """
     )
+    # Безопасная миграция для уже работающего сервера: ALTER TABLE сохраняет
+    # все существующие записи и лишь добавляет место для имени файла фото.
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(items)")}
+    if "photo_filename" not in columns:
+        try:
+            conn.execute("ALTER TABLE items ADD COLUMN photo_filename TEXT")
+        except sqlite3.OperationalError as exc:
+            # API и бот могут впервые запуститься одновременно. Если второй
+            # процесс увидел колонку уже после проверки, миграция всё равно готова.
+            if "duplicate column name" not in str(exc).lower():
+                raise
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS settings (

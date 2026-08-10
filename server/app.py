@@ -1,19 +1,29 @@
 import hashlib
 import hmac
+import io
 import json
+import math
 import os
 import urllib.parse
+import warnings
 from typing import Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel
 
-from db import get_conn, init_db, new_id, now_ms
+from db import DB_PATH, get_conn, init_db, new_id, now_ms
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "*")
 DAY = 86400000
+PHOTO_DIR = os.environ.get(
+    "PHOTO_DIR", os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), "uploads")
+)
+MAX_PHOTO_BYTES = 12 * 1024 * 1024
+MAX_PHOTO_SIDE = 1600
 
 app = FastAPI()
 app.add_middleware(
@@ -24,6 +34,7 @@ app.add_middleware(
 )
 
 init_db()
+os.makedirs(PHOTO_DIR, exist_ok=True)
 
 
 def check_init_data(init_data: str) -> dict:
@@ -80,7 +91,68 @@ def row_to_item(r):
         "decision": r["decision"],
         "decidedAt": r["decided_at"],
         "archived": bool(r["archived"]),
+        "hasPhoto": bool(r["photo_filename"]),
     }
+
+
+def photo_path(filename: str) -> str:
+    # Имена создаются только сервером, но эта проверка не позволит когда-либо
+    # прочитать файл за пределами PHOTO_DIR, даже если база будет повреждена.
+    if not filename or os.path.basename(filename) != filename:
+        raise HTTPException(404, "photo not found")
+    return os.path.join(PHOTO_DIR, filename)
+
+
+def remove_photo(filename: Optional[str]) -> None:
+    if not filename:
+        return
+    try:
+        os.remove(photo_path(filename))
+    except (FileNotFoundError, HTTPException):
+        pass
+
+
+async def store_photo(upload: UploadFile, item_id: str) -> str:
+    if upload.content_type and not upload.content_type.startswith("image/"):
+        raise HTTPException(415, "file must be an image")
+
+    raw = await upload.read(MAX_PHOTO_BYTES + 1)
+    if not raw:
+        raise HTTPException(400, "empty photo")
+    if len(raw) > MAX_PHOTO_BYTES:
+        raise HTTPException(413, "photo is too large")
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(io.BytesIO(raw)) as source:
+                source.seek(0)
+                image = ImageOps.exif_transpose(source).copy()
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError,
+            Image.DecompressionBombWarning):
+        raise HTTPException(415, "unsupported or damaged image")
+
+    image.thumbnail((MAX_PHOTO_SIDE, MAX_PHOTO_SIDE), Image.Resampling.LANCZOS)
+    if image.mode in ("RGBA", "LA") or "transparency" in image.info:
+        rgba = image.convert("RGBA")
+        background = Image.new("RGB", rgba.size, (248, 245, 238))
+        background.paste(rgba, mask=rgba.getchannel("A"))
+        image = background
+    elif image.mode != "RGB":
+        image = image.convert("RGB")
+
+    filename = f"{item_id}.jpg"
+    target = photo_path(filename)
+    temporary = target + ".tmp"
+    try:
+        image.save(temporary, format="JPEG", quality=84, optimize=True)
+        os.replace(temporary, target)
+    finally:
+        try:
+            os.remove(temporary)
+        except FileNotFoundError:
+            pass
+    return filename
 
 
 def settings_to_dict(row):
@@ -114,6 +186,7 @@ def sweep(conn, user_id, settings_row):
         ready_at = r["added_at"] + wait * DAY
         if now >= ready_at + settings_row["archive_after_days"] * DAY:
             if settings_row["archive_action"] == "delete":
+                remove_photo(r["photo_filename"])
                 conn.execute("DELETE FROM items WHERE id=?", (r["id"],))
             else:
                 conn.execute(
@@ -150,6 +223,69 @@ def create_item(item: ItemIn, user_id: int = Depends(get_user_id)):
     conn.commit()
     conn.close()
     return {"id": item_id}
+
+
+@app.post("/api/items-with-photo")
+async def create_item_with_photo(
+    name: str = Form(...),
+    url: str = Form(""),
+    price: str = Form(""),
+    waitDays: Optional[float] = Form(None),
+    photo: Optional[UploadFile] = File(None),
+    user_id: int = Depends(get_user_id),
+):
+    name = name.strip()
+    url = url.strip()
+    price = price.strip()
+    if not name or len(name) > 200:
+        raise HTTPException(422, "name must contain 1 to 200 characters")
+    if len(url) > 2000 or len(price) > 100:
+        raise HTTPException(422, "item fields are too long")
+    if waitDays is not None and (
+        not math.isfinite(waitDays) or waitDays < 0 or waitDays > 3650
+    ):
+        raise HTTPException(422, "invalid wait time")
+
+    item_id = new_id()
+    filename = None
+    if photo is not None and photo.filename:
+        filename = await store_photo(photo, item_id)
+
+    conn = get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO items "
+            "(id, user_id, name, url, price, wait_days, added_at, photo_filename) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (item_id, user_id, name, url, price, waitDays, now_ms(), filename),
+        )
+        conn.commit()
+    except Exception:
+        remove_photo(filename)
+        raise
+    finally:
+        conn.close()
+    return {"id": item_id, "hasPhoto": bool(filename)}
+
+
+@app.get("/api/items/{item_id}/photo")
+def get_item_photo(item_id: str, user_id: int = Depends(get_user_id)):
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT photo_filename FROM items WHERE id=? AND user_id=?",
+        (item_id, user_id),
+    ).fetchone()
+    conn.close()
+    if not row or not row["photo_filename"]:
+        raise HTTPException(404, "photo not found")
+    path = photo_path(row["photo_filename"])
+    if not os.path.isfile(path):
+        raise HTTPException(404, "photo not found")
+    return FileResponse(
+        path,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "private, max-age=86400"},
+    )
 
 
 @app.post("/api/items/{item_id}/decide")

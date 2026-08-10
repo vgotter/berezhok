@@ -24,6 +24,7 @@
   }
 
   *{box-sizing:border-box;}
+  [hidden]{display:none!important;}
   html,body{margin:0;padding:0;}
   body{
     background:var(--paper);
@@ -213,6 +214,24 @@
   }
   .field input:focus, .field select:focus{outline:2px solid var(--waiting);outline-offset:1px;}
   .field-note{font-size:11.5px;color:var(--ink-soft);margin-top:5px;}
+  .photo-picker{
+    display:flex;align-items:center;gap:12px;
+    border:1px dashed var(--line);border-radius:12px;padding:10px;
+    background:var(--paper-raised);
+  }
+  .photo-picker input{display:none;}
+  .photo-add{
+    display:inline-flex!important;align-items:center;justify-content:center;gap:7px;
+    min-height:42px;margin:0!important;padding:10px 12px;border:1px solid var(--line);
+    border-radius:10px;background:var(--paper);color:var(--ink)!important;
+    font-size:13px!important;cursor:pointer;flex:1;
+  }
+  .photo-add[hidden]{display:none!important;}
+  .photo-preview{display:none;align-items:center;gap:9px;min-width:0;flex:1;}
+  .photo-preview.visible{display:flex;}
+  .photo-preview img{width:54px;height:54px;border-radius:9px;object-fit:cover;flex:none;}
+  .photo-preview-name{font-size:12px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .photo-remove{border:0;background:none;color:var(--danger);font-size:12px;padding:5px;cursor:pointer;}
   .two-col{display:flex;gap:10px;}
   .two-col .field{flex:1;}
   .price-row{display:flex;gap:8px;}
@@ -317,6 +336,23 @@
         <input type="url" id="f-url" placeholder="https://…">
       </div>
       <div class="field">
+        <label>Фото (необязательно)</label>
+        <div class="photo-picker">
+          <input type="file" id="f-photo" accept="image/*">
+          <label for="f-photo" class="photo-add" id="photoAddLabel">
+            <span aria-hidden="true">＋</span> Выбрать из галереи
+          </label>
+          <div class="photo-preview" id="photoPreview">
+            <img id="photoPreviewImage" alt="Предпросмотр фотографии">
+            <div style="min-width:0;flex:1;">
+              <div class="photo-preview-name" id="photoPreviewName"></div>
+              <button type="button" class="photo-remove" id="photoRemove">Убрать фото</button>
+            </div>
+          </div>
+        </div>
+        <div class="field-note">Перед отправкой фотография будет уменьшена, чтобы экономить трафик.</div>
+      </div>
+      <div class="field">
         <label for="f-price">Цена</label>
         <div class="price-row">
           <input type="number" id="f-price" placeholder="2400" inputmode="decimal" min="0" step="any">
@@ -406,6 +442,9 @@
   let items = [];
   let settings = { defaultWaitDays: 7, hideWaiting: false, archiveAction: 'archive', archiveAfterDays: 30 };
   let archiveOpen = false;
+  let selectedPhoto = null;
+  let previewObjectUrl = null;
+  const photoObjectUrls = new Map();
 
   const $ = (id) => document.getElementById(id);
 
@@ -427,11 +466,11 @@
   const initData = tg ? tg.initData : '';
 
   async function api(path, options){
+    const isForm = options && options.body instanceof FormData;
+    const defaultHeaders = { 'X-Telegram-Init-Data': initData };
+    if(!isForm) defaultHeaders['Content-Type'] = 'application/json';
     const res = await fetch(API_BASE + path, Object.assign({
-      headers: Object.assign({
-        'Content-Type': 'application/json',
-        'X-Telegram-Init-Data': initData
-      }, (options && options.headers) || {})
+      headers: Object.assign(defaultHeaders, (options && options.headers) || {})
     }, options));
     if(!res.ok) throw new Error('API error ' + res.status);
     return res.status === 204 ? null : res.json();
@@ -442,13 +481,20 @@
       const state = await api('/api/state');
       items = state.items;
       settings = Object.assign(settings, state.settings);
+      await loadPhotoUrls();
     }catch(e){
       showToast('Не удалось загрузить данные — проверь связь с сервером');
     }
   }
 
-  async function createItemOnServer(payload){
-    return api('/api/items', { method: 'POST', body: JSON.stringify(payload) });
+  async function createItemOnServer(payload, photo){
+    const form = new FormData();
+    form.append('name', payload.name);
+    form.append('url', payload.url);
+    form.append('price', payload.price);
+    if(payload.waitDays !== null) form.append('waitDays', String(payload.waitDays));
+    if(photo) form.append('photo', photo, 'photo.jpg');
+    return api('/api/items-with-photo', { method: 'POST', body: form });
   }
   async function decideOnServer(id, decision){
     return api(`/api/items/${id}/decide`, { method: 'POST', body: JSON.stringify({ decision }) });
@@ -456,6 +502,25 @@
   async function saveSettings(partial){
     try{ await api('/api/settings', { method: 'PUT', body: JSON.stringify(partial) }); }
     catch(e){ showToast('Не получилось сохранить настройки'); }
+  }
+
+  async function loadPhotoUrls(){
+    const wanted = new Set(items.filter(it=>it.hasPhoto).map(it=>it.id));
+    for(const [id, objectUrl] of photoObjectUrls){
+      if(!wanted.has(id)){
+        URL.revokeObjectURL(objectUrl);
+        photoObjectUrls.delete(id);
+      }
+    }
+    await Promise.all(items.filter(it=>it.hasPhoto && !photoObjectUrls.has(it.id)).map(async it=>{
+      try{
+        const res = await fetch(`${API_BASE}/api/items/${it.id}/photo`, {
+          headers: { 'X-Telegram-Init-Data': initData }
+        });
+        if(!res.ok) return;
+        photoObjectUrls.set(it.id, URL.createObjectURL(await res.blob()));
+      }catch(e){}
+    }));
   }
 
   function fmtDays(n){
@@ -478,8 +543,9 @@
   }
 
   function thumbHTML(it){
-    if(it.photo){
-      return `<div class="thumb"><img src="${escAttr(it.photo)}" alt="" onerror="this.parentElement.innerHTML='${(it.name||'?').charAt(0).toUpperCase()}'"></div>`;
+    const photoUrl = photoObjectUrls.get(it.id);
+    if(photoUrl){
+      return `<div class="thumb"><img src="${escAttr(photoUrl)}" alt=""></div>`;
     }
     return `<div class="thumb">${escHTML((it.name||'?').charAt(0).toUpperCase())}</div>`;
   }
@@ -622,6 +688,60 @@
   $('closeAdd').addEventListener('click', ()=> $('addOverlay').classList.remove('open'));
   $('addOverlay').addEventListener('click', (e)=>{ if(e.target.id === 'addOverlay') $('addOverlay').classList.remove('open'); });
 
+  function clearSelectedPhoto(){
+    selectedPhoto = null;
+    $('f-photo').value = '';
+    if(previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+    previewObjectUrl = null;
+    $('photoPreviewImage').removeAttribute('src');
+    $('photoPreview').classList.remove('visible');
+    $('photoAddLabel').hidden = false;
+  }
+
+  $('f-photo').addEventListener('change', ()=>{
+    const file = $('f-photo').files && $('f-photo').files[0];
+    if(!file) return clearSelectedPhoto();
+    if(file.type && !file.type.startsWith('image/')){
+      clearSelectedPhoto();
+      return showToast('Нужен файл с фотографией');
+    }
+    if(file.size > 20 * 1024 * 1024){
+      clearSelectedPhoto();
+      return showToast('Фото слишком большое — выбери до 20 МБ');
+    }
+    clearSelectedPhoto();
+    selectedPhoto = file;
+    previewObjectUrl = URL.createObjectURL(file);
+    $('photoPreviewImage').src = previewObjectUrl;
+    $('photoPreviewName').textContent = file.name || 'Выбранное фото';
+    $('photoPreview').classList.add('visible');
+    $('photoAddLabel').hidden = true;
+  });
+  $('photoRemove').addEventListener('click', clearSelectedPhoto);
+
+  async function compressPhoto(file){
+    const objectUrl = URL.createObjectURL(file);
+    try{
+      const image = new Image();
+      await new Promise((resolve, reject)=>{
+        image.onload = resolve;
+        image.onerror = reject;
+        image.src = objectUrl;
+      });
+      const maxSide = 1600;
+      const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+      return await new Promise((resolve, reject)=>{
+        canvas.toBlob(blob=>blob ? resolve(blob) : reject(new Error('image conversion failed')), 'image/jpeg', 0.84);
+      });
+    }finally{
+      URL.revokeObjectURL(objectUrl);
+    }
+  }
+
   $('addForm').addEventListener('submit', async (e)=>{
     e.preventDefault();
     const name = $('f-name').value.trim();
@@ -638,15 +758,24 @@
       })(),
       waitDays: waitSel === 'default' ? null : parseFloat(waitSel)
     };
+    const submit = e.currentTarget.querySelector('[type="submit"]');
+    submit.disabled = true;
+    submit.textContent = selectedPhoto ? 'Готовим фотографию…' : 'Сохраняем…';
     try{
-      await createItemOnServer(payload);
+      const photo = selectedPhoto ? await compressPhoto(selectedPhoto) : null;
+      submit.textContent = 'Сохраняем…';
+      await createItemOnServer(payload, photo);
       $('addForm').reset();
+      clearSelectedPhoto();
       $('addOverlay').classList.remove('open');
       await loadData();
       render();
       showToast('Положила в лист ожидания');
     }catch(err){
-      showToast('Не получилось сохранить — проверь связь');
+      showToast('Не получилось сохранить вещь или фото');
+    }finally{
+      submit.disabled = false;
+      submit.textContent = 'Положить в лист ожидания';
     }
   });
 
