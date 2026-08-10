@@ -58,15 +58,25 @@ async def start(message: Message):
     )
 
 
-def draft_keyboard(draft_id):
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+def draft_keyboard(row):
+    draft_id = row["draft_id"]
+    if row["price"]:
+        first_rows = [
             [InlineKeyboardButton(text="Да, добавить", callback_data=f"draft:add:{draft_id}")],
             [
                 InlineKeyboardButton(text="✏️ Название", callback_data=f"draft:name:{draft_id}"),
                 InlineKeyboardButton(text="💰 Цена", callback_data=f"draft:price:{draft_id}"),
             ],
-            [InlineKeyboardButton(text="Не добавлять", callback_data=f"draft:cancel:{draft_id}")],
+        ]
+    else:
+        first_rows = [
+            [InlineKeyboardButton(text="💰 Указать цену", callback_data=f"draft:price:{draft_id}")],
+            [InlineKeyboardButton(text="Добавить без цены", callback_data=f"draft:add:{draft_id}")],
+            [InlineKeyboardButton(text="✏️ Изменить название", callback_data=f"draft:name:{draft_id}")],
+        ]
+    return InlineKeyboardMarkup(
+        inline_keyboard=first_rows + [
+            [InlineKeyboardButton(text="Не добавлять", callback_data=f"draft:cancel:{draft_id}")]
         ]
     )
 
@@ -75,8 +85,8 @@ def draft_text(row):
     if row["price"]:
         return f"Это «{row['name']}» за {row['price']}, верно?"
     return (
-        f"Похоже, это «{row['name']}». Цену найти не получилось — "
-        "можно добавить её кнопкой ниже. Верно?"
+        f"Похоже, это «{row['name']}». Цену я не нашёл. "
+        "Сначала укажем цену или добавим вещь без неё?"
     )
 
 
@@ -123,7 +133,7 @@ def normalize_price(value: str):
 
 async def send_draft_confirmation(message: Message, row):
     text = draft_text(row)
-    keyboard = draft_keyboard(row["draft_id"])
+    keyboard = draft_keyboard(row)
     photo_path = draft_photo_path(row["photo_filename"])
     if photo_path and os.path.isfile(photo_path):
         await message.answer_photo(
