@@ -101,6 +101,8 @@ class PhotoApiTest(unittest.TestCase):
         ).fetchone()
         conn.close()
         self.assertIn("photo_filename", columns)
+        self.assertIn("reason", columns)
+        self.assertIn("deleted_at", columns)
         self.assertIn("self_pronoun", settings_columns)
         self.assertEqual(old_item[0], "Старая вещь")
         self.assertEqual(old_settings, (14.0, "she"))
@@ -109,7 +111,11 @@ class PhotoApiTest(unittest.TestCase):
         response = self.client.post(
             "/api/items",
             headers=auth_headers(101),
-            json={"name": "Без фотографии", "price": "100 ₽"},
+            json={
+                "name": "Без фотографии",
+                "price": "100 ₽",
+                "reason": "Нужна для прогулок",
+            },
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn("id", response.json())
@@ -120,7 +126,11 @@ class PhotoApiTest(unittest.TestCase):
         response = self.client.post(
             "/api/items-with-photo",
             headers=auth_headers(101),
-            data={"name": "Вещь с фотографией", "waitDays": "7"},
+            data={
+                "name": "Вещь с фотографией",
+                "reason": "Хочу проверить фотографию",
+                "waitDays": "7",
+            },
             files={"photo": ("source.png", source.getvalue(), "image/png")},
         )
         self.assertEqual(response.status_code, 200, response.text)
@@ -167,6 +177,7 @@ class PhotoApiTest(unittest.TestCase):
                 "name": "Исправленное название",
                 "url": "https://example.test/item",
                 "price": "$25",
+                "reason": "Новая причина",
                 "waitDays": "default",
                 "removePhoto": "true",
             },
@@ -179,11 +190,13 @@ class PhotoApiTest(unittest.TestCase):
         self.assertEqual(missing_photo.status_code, 404)
         conn = sqlite3.connect(DB_PATH)
         item = conn.execute(
-            "SELECT name, price, wait_days, photo_filename FROM items WHERE id=?",
+            "SELECT name, price, reason, wait_days, photo_filename FROM items WHERE id=?",
             (item_id,),
         ).fetchone()
         conn.close()
-        self.assertEqual(item, ("Исправленное название", "$25", None, None))
+        self.assertEqual(
+            item, ("Исправленное название", "$25", "Новая причина", None, None)
+        )
 
     def test_06_snooze_reopens_item_and_resets_notification(self):
         item_id = self.photo_item_id
@@ -241,8 +254,58 @@ class PhotoApiTest(unittest.TestCase):
             f"/api/items/{created}", headers=auth_headers(101)
         )
         self.assertEqual(deleted.status_code, 200)
+        state = self.client.get("/api/state", headers=auth_headers(101)).json()
+        self.assertNotIn(created, {item["id"] for item in state["items"]})
+        restored = self.client.post(
+            f"/api/items/{created}/undo", headers=auth_headers(101)
+        )
+        self.assertEqual(restored.status_code, 200)
+        state = self.client.get("/api/state", headers=auth_headers(101)).json()
+        self.assertIn(created, {item["id"] for item in state["items"]})
 
-    def test_09_backup_contains_database_and_photos(self):
+    def test_09_archived_item_can_be_returned_to_waiting(self):
+        item_id = self.photo_item_id
+        restored = self.client.post(
+            f"/api/items/{item_id}/restore", headers=auth_headers(101)
+        )
+        self.assertEqual(restored.status_code, 200)
+        state = self.client.get("/api/state", headers=auth_headers(101)).json()
+        item = next(item for item in state["items"] if item["id"] == item_id)
+        self.assertFalse(item["archived"])
+        self.assertIsNone(item["decision"])
+
+    def test_10_pending_link_is_consumed_once(self):
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute(
+            "INSERT INTO pending_links (user_id, url, created_at) VALUES (?,?,?)",
+            (101, "https://shop.example/item", 1),
+        )
+        conn.commit()
+        conn.close()
+        first = self.client.post(
+            "/api/pending-link/consume", headers=auth_headers(101)
+        )
+        second = self.client.post(
+            "/api/pending-link/consume", headers=auth_headers(101)
+        )
+        self.assertEqual(first.json()["url"], "https://shop.example/item")
+        self.assertEqual(second.json()["url"], "")
+
+    def test_11_five_minute_wait_is_supported(self):
+        five_minutes = 5 / (24 * 60)
+        created = self.client.post(
+            "/api/items",
+            headers=auth_headers(101),
+            json={"name": "Пятиминутный тест", "waitDays": five_minutes},
+        )
+        self.assertEqual(created.status_code, 200)
+        state = self.client.get("/api/state", headers=auth_headers(101)).json()
+        item = next(
+            item for item in state["items"] if item["id"] == created.json()["id"]
+        )
+        self.assertAlmostEqual(item["waitDays"], five_minutes)
+
+    def test_12_backup_contains_database_and_photos(self):
         os.makedirs(PHOTO_DIR, exist_ok=True)
         with open(os.path.join(PHOTO_DIR, "sample.jpg"), "wb") as photo:
             photo.write(b"test-photo")

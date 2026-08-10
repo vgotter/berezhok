@@ -66,6 +66,7 @@ class ItemIn(BaseModel):
     name: str
     url: str = ""
     price: str = ""
+    reason: str = ""
     waitDays: Optional[float] = None
 
 
@@ -91,6 +92,7 @@ def row_to_item(r):
         "name": r["name"],
         "url": r["url"],
         "price": r["price"],
+        "reason": r["reason"] or "",
         "waitDays": r["wait_days"],
         "addedAt": r["added_at"],
         "decision": r["decision"],
@@ -184,7 +186,8 @@ def sweep(conn, user_id, settings_row):
     # после того, как истёк срок ожидания — то же самое, что раньше делал браузер.
     now = now_ms()
     rows = conn.execute(
-        "SELECT * FROM items WHERE user_id=? AND decision IS NULL AND archived=0",
+        "SELECT * FROM items WHERE user_id=? AND decision IS NULL AND archived=0 "
+        "AND deleted_at IS NULL",
         (user_id,),
     ).fetchall()
     for r in rows:
@@ -192,8 +195,9 @@ def sweep(conn, user_id, settings_row):
         ready_at = r["added_at"] + wait * DAY
         if now >= ready_at + settings_row["archive_after_days"] * DAY:
             if settings_row["archive_action"] == "delete":
-                remove_photo(r["photo_filename"])
-                conn.execute("DELETE FROM items WHERE id=?", (r["id"],))
+                conn.execute(
+                    "UPDATE items SET deleted_at=? WHERE id=?", (now, r["id"])
+                )
             else:
                 conn.execute(
                     "UPDATE items SET archived=1, decision='expired', decided_at=? WHERE id=?",
@@ -208,7 +212,8 @@ def get_state(user_id: int = Depends(get_user_id)):
     settings_row = load_settings(conn, user_id)
     sweep(conn, user_id, settings_row)
     items = conn.execute(
-        "SELECT * FROM items WHERE user_id=? ORDER BY added_at", (user_id,)
+        "SELECT * FROM items WHERE user_id=? AND deleted_at IS NULL ORDER BY added_at",
+        (user_id,),
     ).fetchall()
     conn.close()
     return {
@@ -222,9 +227,12 @@ def create_item(item: ItemIn, user_id: int = Depends(get_user_id)):
     conn = get_conn()
     item_id = new_id()
     conn.execute(
-        "INSERT INTO items (id, user_id, name, url, price, wait_days, added_at) "
-        "VALUES (?,?,?,?,?,?,?)",
-        (item_id, user_id, item.name, item.url, item.price, item.waitDays, now_ms()),
+        "INSERT INTO items (id, user_id, name, url, price, reason, wait_days, added_at) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        (
+            item_id, user_id, item.name, item.url, item.price, item.reason,
+            item.waitDays, now_ms(),
+        ),
     )
     conn.commit()
     conn.close()
@@ -236,6 +244,7 @@ async def create_item_with_photo(
     name: str = Form(...),
     url: str = Form(""),
     price: str = Form(""),
+    reason: str = Form(""),
     waitDays: Optional[float] = Form(None),
     photo: Optional[UploadFile] = File(None),
     user_id: int = Depends(get_user_id),
@@ -243,9 +252,10 @@ async def create_item_with_photo(
     name = name.strip()
     url = url.strip()
     price = price.strip()
+    reason = reason.strip()
     if not name or len(name) > 200:
         raise HTTPException(422, "name must contain 1 to 200 characters")
-    if len(url) > 2000 or len(price) > 100:
+    if len(url) > 2000 or len(price) > 100 or len(reason) > 500:
         raise HTTPException(422, "item fields are too long")
     if waitDays is not None and (
         not math.isfinite(waitDays) or waitDays < 0 or waitDays > 3650
@@ -261,9 +271,12 @@ async def create_item_with_photo(
     try:
         conn.execute(
             "INSERT INTO items "
-            "(id, user_id, name, url, price, wait_days, added_at, photo_filename) "
-            "VALUES (?,?,?,?,?,?,?,?)",
-            (item_id, user_id, name, url, price, waitDays, now_ms(), filename),
+            "(id, user_id, name, url, price, reason, wait_days, added_at, photo_filename) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                item_id, user_id, name, url, price, reason, waitDays,
+                now_ms(), filename,
+            ),
         )
         conn.commit()
     except Exception:
@@ -292,6 +305,7 @@ async def update_item(
     name: str = Form(...),
     url: str = Form(""),
     price: str = Form(""),
+    reason: str = Form(""),
     waitDays: Optional[str] = Form(None),
     removePhoto: bool = Form(False),
     photo: Optional[UploadFile] = File(None),
@@ -300,15 +314,17 @@ async def update_item(
     name = name.strip()
     url = url.strip()
     price = price.strip()
+    reason = reason.strip()
     if not name or len(name) > 200:
         raise HTTPException(422, "name must contain 1 to 200 characters")
-    if len(url) > 2000 or len(price) > 100:
+    if len(url) > 2000 or len(price) > 100 or len(reason) > 500:
         raise HTTPException(422, "item fields are too long")
     wait_days = parse_wait_days(waitDays)
 
     conn = get_conn()
     row = conn.execute(
-        "SELECT photo_filename FROM items WHERE id=? AND user_id=?",
+        "SELECT photo_filename FROM items WHERE id=? AND user_id=? "
+        "AND deleted_at IS NULL",
         (item_id, user_id),
     ).fetchone()
     if not row:
@@ -323,9 +339,9 @@ async def update_item(
         elif removePhoto:
             new_filename = None
         conn.execute(
-            "UPDATE items SET name=?, url=?, price=?, wait_days=?, "
+            "UPDATE items SET name=?, url=?, price=?, reason=?, wait_days=?, "
             "photo_filename=? WHERE id=? AND user_id=?",
-            (name, url, price, wait_days, new_filename, item_id, user_id),
+            (name, url, price, reason, wait_days, new_filename, item_id, user_id),
         )
         conn.commit()
     finally:
@@ -339,16 +355,19 @@ async def update_item(
 def delete_item(item_id: str, user_id: int = Depends(get_user_id)):
     conn = get_conn()
     row = conn.execute(
-        "SELECT photo_filename FROM items WHERE id=? AND user_id=?",
+        "SELECT photo_filename FROM items WHERE id=? AND user_id=? "
+        "AND deleted_at IS NULL",
         (item_id, user_id),
     ).fetchone()
     if not row:
         conn.close()
         raise HTTPException(404, "not found")
-    conn.execute("DELETE FROM items WHERE id=? AND user_id=?", (item_id, user_id))
+    conn.execute(
+        "UPDATE items SET deleted_at=? WHERE id=? AND user_id=?",
+        (now_ms(), item_id, user_id),
+    )
     conn.commit()
     conn.close()
-    remove_photo(row["photo_filename"])
     return {"ok": True}
 
 
@@ -356,7 +375,8 @@ def delete_item(item_id: str, user_id: int = Depends(get_user_id)):
 def get_item_photo(item_id: str, user_id: int = Depends(get_user_id)):
     conn = get_conn()
     row = conn.execute(
-        "SELECT photo_filename FROM items WHERE id=? AND user_id=?",
+        "SELECT photo_filename FROM items WHERE id=? AND user_id=? "
+        "AND deleted_at IS NULL",
         (item_id, user_id),
     ).fetchone()
     conn.close()
@@ -378,7 +398,8 @@ def decide_item(item_id: str, body: DecisionIn, user_id: int = Depends(get_user_
         raise HTTPException(422, "invalid decision")
     conn = get_conn()
     row = conn.execute(
-        "SELECT * FROM items WHERE id=? AND user_id=?", (item_id, user_id)
+        "SELECT * FROM items WHERE id=? AND user_id=? AND deleted_at IS NULL",
+        (item_id, user_id),
     ).fetchone()
     if not row:
         conn.close()
@@ -398,7 +419,8 @@ def snooze_item(item_id: str, body: SnoozeIn, user_id: int = Depends(get_user_id
         raise HTTPException(422, "invalid snooze time")
     conn = get_conn()
     row = conn.execute(
-        "SELECT id FROM items WHERE id=? AND user_id=?", (item_id, user_id)
+        "SELECT id FROM items WHERE id=? AND user_id=? AND deleted_at IS NULL",
+        (item_id, user_id),
     ).fetchone()
     if not row:
         conn.close()
@@ -411,6 +433,67 @@ def snooze_item(item_id: str, body: SnoozeIn, user_id: int = Depends(get_user_id
     conn.commit()
     conn.close()
     return {"ok": True}
+
+
+@app.post("/api/items/{item_id}/undo")
+def undo_item(item_id: str, user_id: int = Depends(get_user_id)):
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT deleted_at, decision, archived FROM items WHERE id=? AND user_id=?",
+        (item_id, user_id),
+    ).fetchone()
+    if not row or not (row["deleted_at"] or row["decision"] or row["archived"]):
+        conn.close()
+        raise HTTPException(404, "nothing to undo")
+    if row["deleted_at"]:
+        conn.execute(
+            "UPDATE items SET deleted_at=NULL WHERE id=? AND user_id=?",
+            (item_id, user_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE items SET decision=NULL, decided_at=NULL, archived=0, "
+            "notified=0 WHERE id=? AND user_id=?",
+            (item_id, user_id),
+        )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+@app.post("/api/items/{item_id}/restore")
+def restore_item(item_id: str, user_id: int = Depends(get_user_id)):
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT id FROM items WHERE id=? AND user_id=? AND deleted_at IS NULL "
+        "AND (archived=1 OR decision IS NOT NULL)",
+        (item_id, user_id),
+    ).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(404, "not found")
+    conn.execute(
+        "UPDATE items SET added_at=?, decision=NULL, decided_at=NULL, archived=0, "
+        "notified=0 WHERE id=? AND user_id=?",
+        (now_ms(), item_id, user_id),
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+@app.post("/api/pending-link/consume")
+def consume_pending_link(user_id: int = Depends(get_user_id)):
+    conn = get_conn()
+    conn.execute("BEGIN IMMEDIATE")
+    row = conn.execute(
+        "SELECT url FROM pending_links WHERE user_id=?", (user_id,)
+    ).fetchone()
+    if row:
+        conn.execute("DELETE FROM pending_links WHERE user_id=?", (user_id,))
+        conn.commit()
+    conn.close()
+    return {"url": row["url"] if row else ""}
 
 
 @app.put("/api/settings")

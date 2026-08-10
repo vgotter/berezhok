@@ -48,25 +48,31 @@
     return settings.selfPronoun === 'he' ? masculine : feminine;
   }
 
-  function showToast(message){
+  function showToast(message, actionText, actionHandler, duration){
     const toast = $('toast');
-    toast.textContent = message;
+    const action = $('toastAction');
+    $('toastText').textContent = message;
+    action.hidden = !actionText;
+    action.textContent = actionText || '';
+    action.onclick = actionHandler || null;
     toast.classList.add('show');
     clearTimeout(showToast._handle);
-    showToast._handle = setTimeout(()=>toast.classList.remove('show'), 2200);
+    showToast._handle = setTimeout(()=>toast.classList.remove('show'), duration || (actionText ? 6500 : 2200));
   }
 
   async function api(path, options){
     const isForm = options && options.body instanceof FormData;
     const headers = { 'X-Telegram-Init-Data': initData };
     if(!isForm) headers['Content-Type'] = 'application/json';
-    const response = await fetch(API_BASE + path, Object.assign({
+    const requestOptions = Object.assign({
       headers: Object.assign(headers, (options && options.headers) || {})
-    }, options));
+    }, options);
+    delete requestOptions.silent;
+    const response = await fetch(API_BASE + path, requestOptions);
     if(!response.ok) throw new Error('API error ' + response.status);
     const result = response.status === 204 ? null : await response.json();
     const method = ((options && options.method) || 'GET').toUpperCase();
-    if(method !== 'GET') announceStateChange();
+    if(method !== 'GET' && !(options && options.silent)) announceStateChange();
     return result;
   }
 
@@ -99,6 +105,7 @@
     refreshPromise = (async ()=>{
       const loaded = await loadData();
       if(loaded) render();
+      await openPendingLinkIfAny();
     })();
     try{
       await refreshPromise;
@@ -137,6 +144,7 @@
     form.append('name', payload.name);
     form.append('url', payload.url);
     form.append('price', payload.price);
+    form.append('reason', payload.reason);
     if(payload.waitDays !== null) form.append('waitDays', String(payload.waitDays));
     if(photo) form.append('photo', photo, 'photo.jpg');
     return api('/api/items-with-photo', { method: 'POST', body: form });
@@ -147,6 +155,7 @@
     form.append('name', payload.name);
     form.append('url', payload.url);
     form.append('price', payload.price);
+    form.append('reason', payload.reason);
     form.append('waitDays', payload.waitDays === null ? 'default' : String(payload.waitDays));
     form.append('removePhoto', removePhoto ? 'true' : 'false');
     if(photo) form.append('photo', photo, 'photo.jpg');
@@ -167,6 +176,30 @@
     return api(`/api/items/${id}/snooze`, {
       method: 'POST', body: JSON.stringify({ days })
     });
+  }
+
+  function undoOnServer(id){
+    return api(`/api/items/${id}/undo`, { method: 'POST' });
+  }
+
+  function restoreOnServer(id){
+    return api(`/api/items/${id}/restore`, { method: 'POST' });
+  }
+
+  function consumePendingLink(){
+    return api('/api/pending-link/consume', { method: 'POST', silent: true });
+  }
+
+  async function openPendingLinkIfAny(){
+    try{
+      const pending = await consumePendingLink();
+      if(pending && pending.url){
+        $('addForm').reset();
+        clearSelectedPhoto();
+        openAdd(pending.url);
+        showToast('Ссылка уже в карточке — осталось добавить название');
+      }
+    }catch(error){}
   }
 
   async function saveSettings(partial){
@@ -203,6 +236,10 @@
     return fmtDays(Math.ceil(milliseconds / DAY));
   }
 
+  function fmtWaitDays(days){
+    return days < 1 ? fmtRemaining(days * DAY) : fmtDays(days);
+  }
+
   function itemStatus(item){
     if(item.archived || item.decision) return 'archived';
     const wait = (item.waitDays ?? settings.defaultWaitDays) * DAY;
@@ -231,6 +268,7 @@
             ${item.price ? `<div class="card-price">${escHTML(item.price)}</div>` : ''}
           </div>
         </div>
+        ${item.reason ? `<div class="card-reason">«${escHTML(item.reason)}»</div>` : ''}
         <div class="gauge-row">
           <div class="gauge"><div class="gauge-fill is-ready" style="width:100%"></div></div>
           <span class="gauge-label">пора решать</span>
@@ -337,9 +375,34 @@
     card.classList.add('visible');
   }
 
+  function renderMonthly(){
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const decided = items.filter(item=>item.decidedAt && item.decidedAt >= monthStart);
+    const bought = decided.filter(item=>item.decision === 'bought').length;
+    const dropped = decided.filter(item=>item.decision === 'drop');
+    const kept = decided.filter(item=>item.decision === 'keep').length;
+    const month = new Intl.DateTimeFormat('ru-RU', { month: 'long' }).format(now);
+    $('monthlyTitle').textContent = `Итог за ${month}`;
+    if(!decided.length){
+      $('monthlyText').textContent = 'В этом месяце решений пока нет.';
+    }else{
+      const totals = new Map();
+      dropped.forEach(item=>{
+        const parsed = parsePrice(item.price);
+        if(parsed) totals.set(parsed.currency, (totals.get(parsed.currency) || 0) + parsed.amount);
+      });
+      const saved = Array.from(totals, ([currency, amount])=>formatAmount(amount, currency));
+      const parts = [`куплено: ${bought}`, `не понадобилось: ${dropped.length}`, `в желаниях: ${kept}`];
+      if(saved.length) parts.push(`сохранено: ${saved.join(' · ')}`);
+      $('monthlyText').textContent = parts.join(' · ');
+    }
+    $('monthlyCard').classList.add('visible');
+  }
+
   function matchesSearch(item){
     if(!searchQuery) return true;
-    return [item.name, item.price, item.url].join(' ').toLocaleLowerCase('ru').includes(searchQuery);
+    return [item.name, item.price, item.url, item.reason].join(' ').toLocaleLowerCase('ru').includes(searchQuery);
   }
 
   function bindCards(){
@@ -364,6 +427,7 @@
       'Если не принял решение за месяц'
     );
     renderEffect();
+    renderMonthly();
     const filtered = items.filter(matchesSearch);
     const ready = filtered.filter(item=>itemStatus(item) === 'ready');
     const waiting = filtered.filter(item=>itemStatus(item) === 'waiting');
@@ -419,6 +483,17 @@
     return say('Убрала из списка','Убрал из списка');
   }
 
+  async function undoLastAction(id){
+    try{
+      await undoOnServer(id);
+      await loadData();
+      render();
+      showToast('Действие отменено');
+    }catch(error){
+      showToast('Не получилось отменить действие');
+    }
+  }
+
   async function onCardAction(event){
     event.stopPropagation();
     const id = event.currentTarget.dataset.id;
@@ -429,7 +504,7 @@
       closeDetail();
       await loadData();
       render();
-      showToast(decisionToast(action));
+      showToast(decisionToast(action), 'Отменить', ()=>undoLastAction(id));
     }catch(error){
       showToast('Не получилось сохранить решение');
     }
@@ -468,6 +543,7 @@
     $('d-photo').value = '';
     $('d-name').value = item.name || '';
     $('d-url').value = item.url || '';
+    $('d-reason').value = item.reason || '';
     const parsed = parsePrice(item.price);
     $('d-price').value = parsed ? parsed.amount : '';
     $('d-currency').value = parsed ? parsed.currency : '₽';
@@ -480,7 +556,9 @@
     }
     $('d-wait').value = waitValue;
     $('detailStatus').textContent = statusText(item);
+    const archived = itemStatus(item) === 'archived';
     $('detailActions').style.display = itemStatus(item) === 'ready' ? 'grid' : 'none';
+    $('restoreItem').hidden = !archived;
     document.querySelector('[data-detail-action="bought"]').textContent = say('Купила','Купил');
     renderDetailPhoto(item);
     $('detailOverlay').classList.add('open');
@@ -561,7 +639,12 @@
     return Promise.resolve(window.confirm(message));
   }
 
-  $('openAddBtn').addEventListener('click', ()=>$('addOverlay').classList.add('open'));
+  function openAdd(url){
+    if(url) $('f-url').value = url;
+    $('addOverlay').classList.add('open');
+  }
+
+  $('openAddBtn').addEventListener('click', ()=>openAdd());
   $('closeAdd').addEventListener('click', ()=>$('addOverlay').classList.remove('open'));
   $('addOverlay').addEventListener('click', event=>{
     if(event.target.id === 'addOverlay') $('addOverlay').classList.remove('open');
@@ -590,6 +673,7 @@
       name,
       url: $('f-url').value.trim(),
       price: buildPrice($('f-price').value, $('f-currency').value),
+      reason: $('f-reason').value.trim(),
       waitDays: waitValue === 'default' ? null : parseFloat(waitValue)
     };
     const submit = event.currentTarget.querySelector('[type="submit"]');
@@ -645,6 +729,7 @@
       name: $('d-name').value.trim(),
       url: $('d-url').value.trim(),
       price: buildPrice($('d-price').value, $('d-currency').value),
+      reason: $('d-reason').value.trim(),
       waitDays: waitValue === 'default' ? null : parseFloat(waitValue)
     };
     const submit = event.currentTarget.querySelector('[type="submit"]');
@@ -667,16 +752,29 @@
   });
   $('deleteItem').addEventListener('click', async ()=>{
     const id = detailItemId;
-    if(!id || !(await askConfirm('Удалить эту вещь без возможности восстановления?'))) return;
+    if(!id || !(await askConfirm('Удалить эту вещь? Действие можно будет сразу отменить.'))) return;
     try{
       await deleteItemOnServer(id);
       invalidatePhoto(id);
       closeDetail();
       await loadData();
       render();
-      showToast(say('Удалила вещь','Удалил вещь'));
+      showToast(say('Удалила вещь','Удалил вещь'), 'Отменить', ()=>undoLastAction(id));
     }catch(error){
       showToast('Не получилось удалить вещь');
+    }
+  });
+  $('restoreItem').addEventListener('click', async ()=>{
+    const id = detailItemId;
+    if(!id) return;
+    try{
+      await restoreOnServer(id);
+      closeDetail();
+      await loadData();
+      render();
+      showToast('Вернули вещь на подумать');
+    }catch(error){
+      showToast('Не получилось вернуть вещь');
     }
   });
   document.querySelectorAll('[data-detail-action]').forEach(button=>{
@@ -705,7 +803,7 @@
         closeDetail();
         await loadData();
         render();
-        showToast(`Вернёмся к этому через ${fmtDays(days)}`);
+        showToast(`Вернёмся к этому через ${fmtWaitDays(days)}`);
       }catch(error){
         showToast('Не получилось перенести срок');
       }
@@ -784,5 +882,6 @@
     await loadData();
     lastRefreshAt = Date.now();
     render();
+    await openPendingLinkIfAny();
   })();
 })();

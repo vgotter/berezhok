@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import (
@@ -24,18 +25,46 @@ dp = Dispatcher()
 init_db()
 
 
-@dp.message(CommandStart())
-async def start(message: Message):
-    keyboard = InlineKeyboardMarkup(
+def open_app_keyboard():
+    return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Открыть Бережка", web_app=WebAppInfo(url=WEBAPP_URL))]
         ]
     )
+
+
+@dp.message(CommandStart())
+async def start(message: Message):
     await message.answer(
         "Привет! Это Бережок — список на подумать перед покупкой.\n\n"
         "Добавляй сюда то, что хочешь купить, а через выбранный срок вернёшься "
         "и решишь — всё ещё хочется или нет.",
-        reply_markup=keyboard,
+        reply_markup=open_app_keyboard(),
+    )
+
+
+@dp.message(F.text)
+async def catch_shared_link(message: Message):
+    if not message.text or message.text.startswith("/"):
+        return
+    match = re.search(r"https?://[^\s<>()]+", message.text)
+    if not match:
+        return
+    url = match.group(0).rstrip(".,!?;:)]}")
+    if len(url) > 2000:
+        await message.answer("Ссылка слишком длинная — попробуй отправить другую.")
+        return
+    conn = get_conn()
+    conn.execute(
+        "INSERT INTO pending_links (user_id, url, created_at) VALUES (?,?,?) "
+        "ON CONFLICT(user_id) DO UPDATE SET url=excluded.url, created_at=excluded.created_at",
+        (message.from_user.id, url, now_ms()),
+    )
+    conn.commit()
+    conn.close()
+    await message.answer(
+        "Ссылку поймал 🌿 Открой Бережок — она уже будет в новой карточке.",
+        reply_markup=open_app_keyboard(),
     )
 
 
@@ -56,7 +85,7 @@ async def on_decision(callback: CallbackQuery):
         SELECT items.*, settings.self_pronoun
         FROM items
         LEFT JOIN settings ON settings.user_id = items.user_id
-        WHERE items.id=? AND items.user_id=?
+        WHERE items.id=? AND items.user_id=? AND items.deleted_at IS NULL
         """,
         (item_id, callback.from_user.id),
     ).fetchone()
@@ -87,7 +116,7 @@ async def on_snooze(callback: CallbackQuery):
     days = float(days_text)
     conn = get_conn()
     row = conn.execute(
-        "SELECT id FROM items WHERE id=? AND user_id=?",
+        "SELECT id FROM items WHERE id=? AND user_id=? AND deleted_at IS NULL",
         (item_id, callback.from_user.id),
     ).fetchone()
     if not row:
@@ -119,7 +148,8 @@ async def reminder_loop():
                        settings.self_pronoun AS self_pronoun
                 FROM items
                 LEFT JOIN settings ON settings.user_id = items.user_id
-                WHERE items.decision IS NULL AND items.archived = 0 AND items.notified = 0
+                WHERE items.decision IS NULL AND items.archived = 0
+                  AND items.notified = 0 AND items.deleted_at IS NULL
                 """
             ).fetchall()
             for r in rows:
@@ -143,9 +173,17 @@ async def reminder_loop():
                         ]
                     )
                     try:
+                        reason = ""
+                        if r["reason"]:
+                            reason_intro = user_word(
+                                r["self_pronoun"] or "she",
+                                "Ты хотела этого потому, что",
+                                "Ты хотел этого потому, что",
+                            )
+                            reason = f"\n{reason_intro}: {r['reason']}"
                         await bot.send_message(
                             r["user_id"],
-                            f"Прошло время — всё ещё хочешь «{r['name']}»?",
+                            f"Прошло время — всё ещё хочешь «{r['name']}»?{reason}",
                             reply_markup=keyboard,
                         )
                         conn.execute("UPDATE items SET notified=1 WHERE id=?", (r["id"],))

@@ -43,6 +43,16 @@ def init_db():
             # процесс увидел колонку уже после проверки, миграция всё равно готова.
             if "duplicate column name" not in str(exc).lower():
                 raise
+    for column, definition in (
+        ("reason", "TEXT"),
+        ("deleted_at", "INTEGER"),
+    ):
+        if column not in columns:
+            try:
+                conn.execute(f"ALTER TABLE items ADD COLUMN {column} {definition}")
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" not in str(exc).lower():
+                    raise
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS settings (
@@ -66,6 +76,15 @@ def init_db():
         except sqlite3.OperationalError as exc:
             if "duplicate column name" not in str(exc).lower():
                 raise
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pending_links (
+            user_id INTEGER PRIMARY KEY,
+            url TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        )
+        """
+    )
     conn.commit()
     conn.close()
 
