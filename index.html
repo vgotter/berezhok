@@ -421,7 +421,7 @@
   // Данные теперь живут на сервере (не в Telegram CloudStorage) — это нужно,
   // чтобы бот сам мог по расписанию проверять сроки и слать напоминания.
   // ЗАМЕНИ на адрес своего сервера после деплоя на TimeWeb.
-  const API_BASE = 'https://my-berezhok-bot.net.ru';
+  const API_BASE = 'https://api.my-berezhok-bot.net.ru';
 
   const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
   const initData = tg ? tg.initData : '';
