@@ -85,6 +85,20 @@ def init_db():
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS link_drafts (
+            user_id INTEGER PRIMARY KEY,
+            draft_id TEXT NOT NULL,
+            url TEXT NOT NULL,
+            name TEXT NOT NULL,
+            price TEXT NOT NULL DEFAULT '',
+            photo_filename TEXT,
+            edit_field TEXT,
+            created_at INTEGER NOT NULL
+        )
+        """
+    )
     conn.commit()
     conn.close()
 

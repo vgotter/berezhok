@@ -99,6 +99,9 @@ class PhotoApiTest(unittest.TestCase):
         old_settings = conn.execute(
             "SELECT default_wait_days, self_pronoun FROM settings WHERE user_id=101"
         ).fetchone()
+        draft_table = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='link_drafts'"
+        ).fetchone()
         conn.close()
         self.assertIn("photo_filename", columns)
         self.assertIn("reason", columns)
@@ -106,6 +109,7 @@ class PhotoApiTest(unittest.TestCase):
         self.assertIn("self_pronoun", settings_columns)
         self.assertEqual(old_item[0], "Старая вещь")
         self.assertEqual(old_settings, (14.0, "she"))
+        self.assertEqual(draft_table[0], "link_drafts")
 
     def test_02_existing_json_endpoint_still_works(self):
         response = self.client.post(
