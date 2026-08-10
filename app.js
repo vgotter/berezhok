@@ -62,7 +62,9 @@
       const state = await api('/api/state');
       items = state.items;
       settings = Object.assign(settings, state.settings);
-      await loadPhotoUrls();
+      // Карточки должны появиться сразу после получения состояния. Медленная
+      // или зависшая загрузка одной фотографии не должна скрывать весь список.
+      loadPhotoUrls().then(render).catch(()=>{});
       return true;
     }catch(error){
       showToast('Не удалось загрузить данные — проверь связь с сервером');

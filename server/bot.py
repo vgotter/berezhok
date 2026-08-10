@@ -15,7 +15,7 @@ from db import get_conn, init_db, now_ms
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 WEBAPP_URL_BASE = os.environ.get("WEBAPP_URL", "https://vgotter.github.io/berezhok/")
-APP_VERSION = os.environ.get("APP_VERSION", "20260810-3")
+APP_VERSION = os.environ.get("APP_VERSION", "20260810-4")
 WEBAPP_URL = (
     f"{WEBAPP_URL_BASE}{'&' if '?' in WEBAPP_URL_BASE else '?'}v={APP_VERSION}"
 )
