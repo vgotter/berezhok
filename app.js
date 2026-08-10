@@ -1,6 +1,7 @@
 (function(){
   const DAY = 86400000;
   const API_BASE = 'https://api.my-berezhok-bot.net.ru';
+  const CHANNEL_URL = 'https://t.me/my_berezhok';
   const CURRENCIES = [
     ['₽','₽ рубль'], ['$','$ доллар'], ['€','€ евро'], ['£','£ фунт'],
     ['₾','₾ лари'], ['֏','֏ драм'], ['₺','₺ лира'], ['₪','₪ шекель'],
@@ -850,6 +851,13 @@
   $('s-archiveAction').addEventListener('change', async ()=>{
     settings.archiveAction = $('s-archiveAction').value;
     await saveSettings({ archiveAction: settings.archiveAction });
+  });
+  $('channelLink').addEventListener('click', event=>{
+    if(tg && typeof tg.openTelegramLink === 'function'){
+      event.preventDefault();
+      $('settingsOverlay').classList.remove('open');
+      tg.openTelegramLink(CHANNEL_URL);
+    }
   });
 
   $('searchInput').addEventListener('input', ()=>{
