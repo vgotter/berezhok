@@ -23,6 +23,7 @@ from product_metadata import (
     ProductFetchError,
     fetch_product_image,
     fetch_product_metadata,
+    normalize_user_price,
 )
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
@@ -125,12 +126,6 @@ def save_draft_photo(raw: bytes, user_id: int, draft_id: str):
     return filename
 
 
-def normalize_price(value: str):
-    value = " ".join(value.split()).strip()
-    value = re.sub(r"\s*(?:р|р\.|руб|руб\.)$", " ₽", value, flags=re.IGNORECASE)
-    return value[:100]
-
-
 async def send_draft_confirmation(message: Message, row):
     text = draft_text(row)
     keyboard = draft_keyboard(row)
@@ -188,7 +183,7 @@ async def catch_shared_link(message: Message):
         if field == "name":
             value = value[:200]
         else:
-            value = normalize_price(value)
+            value = normalize_user_price(value)
         if not value:
             conn.close()
             await message.answer("Нужно прислать непустое значение.")
@@ -289,7 +284,7 @@ async def on_draft_action(callback: CallbackQuery):
         prompt = (
             "Пришли новое название одним сообщением. Для выхода напиши «Отмена»."
             if action == "name"
-            else "Пришли новую цену, например: 10000 ₽ или $250. Для выхода напиши «Отмена»."
+            else "Пришли новую цену, например: 10000, 10000 руб или $250. Для выхода напиши «Отмена»."
         )
         await callback.message.answer(prompt)
         await callback.answer()

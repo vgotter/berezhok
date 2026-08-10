@@ -1,6 +1,7 @@
 import asyncio
 import ipaddress
 import json
+import re
 import socket
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
@@ -23,6 +24,24 @@ CURRENCY_SYMBOLS = {
     "KGS": "сом", "UZS": "сум", "RSD": "дин", "AED": "AED",
     "BYN": "Br", "CNY": "¥",
 }
+CURRENCY_ALIASES = (
+    ("RUB", r"₽|(?<![A-Za-zА-Яа-яЁё])(?:rub|rur|р(?:уб(?:ль|ля|лей|ли)?)?)\.?(?![A-Za-zА-Яа-яЁё])"),
+    ("USD", r"\$|(?<![A-Za-zА-Яа-яЁё])(?:usd|доллар(?:а|ов)?)(?![A-Za-zА-Яа-яЁё])"),
+    ("EUR", r"€|(?<![A-Za-zА-Яа-яЁё])(?:eur|евро)(?![A-Za-zА-Яа-яЁё])"),
+    ("GBP", r"£|(?<![A-Za-zА-Яа-яЁё])(?:gbp|фунт(?:а|ов)?)(?![A-Za-zА-Яа-яЁё])"),
+    ("GEL", r"₾|(?<![A-Za-zА-Яа-яЁё])(?:gel|лари)(?![A-Za-zА-Яа-яЁё])"),
+    ("AMD", r"֏|(?<![A-Za-zА-Яа-яЁё])(?:amd|драм(?:а|ов)?)(?![A-Za-zА-Яа-яЁё])"),
+    ("TRY", r"₺|(?<![A-Za-zА-Яа-яЁё])(?:try|лир(?:а|ы)?)(?![A-Za-zА-Яа-яЁё])"),
+    ("ILS", r"₪|(?<![A-Za-zА-Яа-яЁё])(?:ils|шекел(?:ь|я|ей)?)(?![A-Za-zА-Яа-яЁё])"),
+    ("KZT", r"₸|(?<![A-Za-zА-Яа-яЁё])(?:kzt|тенге)(?![A-Za-zА-Яа-яЁё])"),
+    ("UAH", r"₴|(?<![A-Za-zА-Яа-яЁё])(?:uah|грн|грив(?:на|ны|ен))(?![A-Za-zА-Яа-яЁё])"),
+    ("KGS", r"(?<![A-Za-zА-Яа-яЁё])(?:kgs|сом)(?![A-Za-zА-Яа-яЁё])"),
+    ("UZS", r"(?<![A-Za-zА-Яа-яЁё])(?:uzs|сум)(?![A-Za-zА-Яа-яЁё])"),
+    ("RSD", r"(?<![A-Za-zА-Яа-яЁё])(?:rsd|дин|динар(?:а|ов)?)(?![A-Za-zА-Яа-яЁё])"),
+    ("AED", r"(?<![A-Za-zА-Яа-яЁё])(?:aed|дирхам(?:а|ов)?)(?![A-Za-zА-Яа-яЁё])"),
+    ("BYN", r"(?<![A-Za-zА-Яа-яЁё])(?:byn|br|бел(?:орусских|орусский)?\s+руб(?:ль|ля|лей)?)(?![A-Za-zА-Яа-яЁё])"),
+    ("CNY", r"¥|(?<![A-Za-zА-Яа-яЁё])(?:cny|юан(?:ь|я|ей))(?![A-Za-zА-Яа-яЁё])"),
+)
 
 
 class ProductFetchError(Exception):
@@ -95,6 +114,34 @@ def format_price(amount: str, currency: str) -> str:
     if not symbol:
         return amount
     return f"{symbol}{amount}" if symbol in {"$", "£"} else f"{amount} {symbol}"
+
+
+def normalize_user_price(value: str, default_currency: str = "RUB") -> str:
+    original = clean_text(value)[:100]
+    if not original:
+        return ""
+    amount_text = original
+    currency = ""
+    for code, pattern in CURRENCY_ALIASES:
+        match = re.search(pattern, amount_text, flags=re.IGNORECASE)
+        if match:
+            currency = code
+            amount_text = (amount_text[:match.start()] + amount_text[match.end():]).strip()
+            break
+    short = re.fullmatch(
+        r"(\d+(?:[.,]\d+)?)\s*(?:к|k|тыс\.?)", amount_text, flags=re.IGNORECASE
+    )
+    if short:
+        try:
+            amount_text = format(
+                (Decimal(short.group(1).replace(",", ".")) * 1000).normalize(), "f"
+            )
+        except InvalidOperation:
+            return original
+    compact = amount_text.replace("\u00a0", "").replace(" ", "")
+    if not re.fullmatch(r"\d+(?:[.,]\d+)?", compact):
+        return original
+    return format_price(compact, currency or default_currency)
 
 
 def meta_content(soup, *keys) -> str:

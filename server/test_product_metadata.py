@@ -3,6 +3,7 @@ import unittest
 from product_metadata import (
     ProductFetchError,
     ensure_public_url,
+    normalize_user_price,
     parse_product_html,
 )
 
@@ -40,6 +41,28 @@ class ProductMetadataTest(unittest.TestCase):
         self.assertEqual(result.name, "Красивый чайник")
         self.assertEqual(result.price, "$25.5")
         self.assertEqual(result.image_url, "https://cdn.example/kettle.png")
+
+    def test_human_price_input_is_normalized(self):
+        ruble_examples = {
+            "5000": "5000 ₽",
+            "5000 руб": "5000 ₽",
+            "5000 рубля": "5000 ₽",
+            "5000 рублей": "5000 ₽",
+            "5000 рубли": "5000 ₽",
+            "5000 RUB": "5000 ₽",
+            "5000р": "5000 ₽",
+            "5к": "5000 ₽",
+            "10 тыс.": "10000 ₽",
+        }
+        for value, expected in ruble_examples.items():
+            with self.subTest(value=value):
+                self.assertEqual(normalize_user_price(value), expected)
+        self.assertEqual(normalize_user_price("250 usd"), "$250")
+        self.assertEqual(normalize_user_price("20 евро"), "20 €")
+        self.assertEqual(normalize_user_price("50 лари"), "50 ₾")
+        self.assertEqual(
+            normalize_user_price("цена по запросу"), "цена по запросу"
+        )
 
 
 class ProductFetchSafetyTest(unittest.IsolatedAsyncioTestCase):

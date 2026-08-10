@@ -265,7 +265,7 @@
           ${thumbHTML(item)}
           <div class="card-info">
             ${itemNameHTML(item)}
-            ${item.price ? `<div class="card-price">${escHTML(item.price)}</div>` : ''}
+            ${item.price ? `<div class="card-price">${escHTML(displayPrice(item.price))}</div>` : ''}
           </div>
         </div>
         ${item.reason ? `<div class="card-reason">«${escHTML(item.reason)}»</div>` : ''}
@@ -294,7 +294,7 @@
           ${thumbHTML(item)}
           <div class="card-info">
             ${itemNameHTML(item)}
-            ${item.price ? `<div class="card-price">${escHTML(item.price)}</div>` : ''}
+            ${item.price ? `<div class="card-price">${escHTML(displayPrice(item.price))}</div>` : ''}
           </div>
         </div>
         <div class="gauge-row">
@@ -316,7 +316,7 @@
           ${thumbHTML(item)}
           <div class="card-info">
             ${itemNameHTML(item)}
-            ${item.price ? `<div class="card-price">${escHTML(item.price)}</div>` : ''}
+            ${item.price ? `<div class="card-price">${escHTML(displayPrice(item.price))}</div>` : ''}
             ${badge}
           </div>
         </div>
@@ -341,14 +341,21 @@
         break;
       }
     }
+    if(!numberText.trim()) return null;
     const amount = Number(numberText.replace(/\s/g, '').replace(',', '.'));
-    if(!currency || !Number.isFinite(amount)) return null;
+    if(!Number.isFinite(amount)) return null;
+    if(!currency) currency = '₽';
     return { amount, currency };
   }
 
   function formatAmount(amount, currency){
     const number = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(amount);
     return currency === '$' || currency === '£' ? currency + number : number + ' ' + currency;
+  }
+
+  function displayPrice(price){
+    const parsed = parsePrice(price);
+    return parsed ? formatAmount(parsed.amount, parsed.currency) : String(price || '');
   }
 
   function renderEffect(){
