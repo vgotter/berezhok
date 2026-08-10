@@ -33,6 +33,16 @@
   const $ = (id) => document.getElementById(id);
   const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
   const initData = tg ? tg.initData : '';
+  let stateChannel = null;
+  try{
+    if(typeof BroadcastChannel === 'function'){
+      stateChannel = new BroadcastChannel('berezhok-state');
+      stateChannel.addEventListener('message', refreshWhenActive);
+    }
+    window.addEventListener('storage', event=>{
+      if(event.key === 'berezhok-state-changed') refreshWhenActive();
+    });
+  }catch(error){}
 
   function say(feminine, masculine){
     return settings.selfPronoun === 'he' ? masculine : feminine;
@@ -54,7 +64,17 @@
       headers: Object.assign(headers, (options && options.headers) || {})
     }, options));
     if(!response.ok) throw new Error('API error ' + response.status);
-    return response.status === 204 ? null : response.json();
+    const result = response.status === 204 ? null : await response.json();
+    const method = ((options && options.method) || 'GET').toUpperCase();
+    if(method !== 'GET') announceStateChange();
+    return result;
+  }
+
+  function announceStateChange(){
+    try{
+      if(stateChannel) stateChannel.postMessage('changed');
+      localStorage.setItem('berezhok-state-changed', String(Date.now()));
+    }catch(error){}
   }
 
   async function loadData(){
