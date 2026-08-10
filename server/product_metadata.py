@@ -25,9 +25,24 @@ CURRENCY_SYMBOLS = {
     "BYN": "Br", "CNY": "¥",
 }
 CURRENCY_ALIASES = (
-    ("RUB", r"₽|(?<![A-Za-zА-Яа-яЁё])(?:rub|rur|р(?:уб(?:ль|ля|лей|ли)?)?)\.?(?![A-Za-zА-Яа-яЁё])"),
-    ("USD", r"\$|(?<![A-Za-zА-Яа-яЁё])(?:usd|доллар(?:а|ов)?)(?![A-Za-zА-Яа-яЁё])"),
-    ("EUR", r"€|(?<![A-Za-zА-Яа-яЁё])(?:eur|евро)(?![A-Za-zА-Яа-яЁё])"),
+    (
+        "RUB",
+        r"₽|(?<![A-Za-zА-Яа-яЁё])(?:rub|rur|ру|р|"
+        r"руб(?:ль|ля|лей|ли)?|руб(?:ас|лик)(?:а|и|ов)?|"
+        r"деревянн(?:ый|ого|ые|ых)?)\.?(?![A-Za-zА-Яа-яЁё])",
+    ),
+    (
+        "USD",
+        r"\$|(?<![A-Za-zА-Яа-яЁё])(?:usd|доллар(?:а|ы|ов)?|"
+        r"бакс(?:а|ы|ов)?|бач(?:а|и|ей)?|зел[её]н(?:ый|ого|ые|ых)|"
+        r"грин(?:а|ы|ов)?|у\.?\s*е\.?)"
+        r"(?![A-Za-zА-Яа-яЁё])",
+    ),
+    (
+        "EUR",
+        r"€|(?<![A-Za-zА-Яа-яЁё])(?:eur|евро|еврик(?:а|и|ов)?|ойро)"
+        r"(?![A-Za-zА-Яа-яЁё])",
+    ),
     ("GBP", r"£|(?<![A-Za-zА-Яа-яЁё])(?:gbp|фунт(?:а|ов)?)(?![A-Za-zА-Яа-яЁё])"),
     ("GEL", r"₾|(?<![A-Za-zА-Яа-яЁё])(?:gel|лари)(?![A-Za-zА-Яа-яЁё])"),
     ("AMD", r"֏|(?<![A-Za-zА-Яа-яЁё])(?:amd|драм(?:а|ов)?)(?![A-Za-zА-Яа-яЁё])"),
@@ -41,6 +56,24 @@ CURRENCY_ALIASES = (
     ("AED", r"(?<![A-Za-zА-Яа-яЁё])(?:aed|дирхам(?:а|ов)?)(?![A-Za-zА-Яа-яЁё])"),
     ("BYN", r"(?<![A-Za-zА-Яа-яЁё])(?:byn|br|бел(?:орусских|орусский)?\s+руб(?:ль|ля|лей)?)(?![A-Za-zА-Яа-яЁё])"),
     ("CNY", r"¥|(?<![A-Za-zА-Яа-яЁё])(?:cny|юан(?:ь|я|ей))(?![A-Za-zА-Яа-яЁё])"),
+)
+MULTIPLIER_ALIASES = (
+    (
+        Decimal("1000000000"),
+        r"(?:млрд\.?|миллиард(?:а|ы|ов)?|ярд(?:а|ы|ов)?)",
+    ),
+    (
+        Decimal("1000000"),
+        r"(?:млн\.?|миллион(?:а|ы|ов)?|лям(?:а|ы|ов)?|"
+        r"лимон(?:а|ы|ов)?|мульт(?:а|ы|ов)?|кк)",
+    ),
+    (
+        Decimal("1000"),
+        r"(?:к|k|тыс\.?|тысяч(?:а|и|у)?|тыщ(?:а|и|у|ей|онка|онки|онок)?|"
+        r"косар(?:ь|я|ей|ик(?:а|и|ов)?)|тонн(?:а|ы|у)?|"
+        r"к[еэ]с(?:а|ы|ов)?|тыр(?:а|ы|ов)?|тырик(?:а|и|ов)?|"
+        r"кос(?:ой|ого|ые|ых)|штук(?:а|и)?)",
+    ),
 )
 
 
@@ -128,16 +161,28 @@ def normalize_user_price(value: str, default_currency: str = "RUB") -> str:
             currency = code
             amount_text = (amount_text[:match.start()] + amount_text[match.end():]).strip()
             break
-    short = re.fullmatch(
-        r"(\d+(?:[.,]\d+)?)\s*(?:к|k|тыс\.?)", amount_text, flags=re.IGNORECASE
-    )
-    if short:
+    for multiplier, pattern in MULTIPLIER_ALIASES:
+        short = re.fullmatch(
+            rf"(\d+(?:[.,]\d+)?)\s*{pattern}", amount_text, flags=re.IGNORECASE
+        )
+        bare = re.fullmatch(pattern, amount_text, flags=re.IGNORECASE)
+        half = re.fullmatch(rf"пол\s*{pattern}", amount_text, flags=re.IGNORECASE)
+        if not short and not bare and not half:
+            continue
         try:
+            quantity = (
+                Decimal(short.group(1).replace(",", "."))
+                if short
+                else Decimal("0.5") if half
+                else Decimal("1")
+            )
             amount_text = format(
-                (Decimal(short.group(1).replace(",", ".")) * 1000).normalize(), "f"
+                (quantity * multiplier).normalize(),
+                "f",
             )
         except InvalidOperation:
             return original
+        break
     compact = amount_text.replace("\u00a0", "").replace(" ", "")
     if not re.fullmatch(r"\d+(?:[.,]\d+)?", compact):
         return original

@@ -64,6 +64,40 @@ class ProductMetadataTest(unittest.TestCase):
             normalize_user_price("цена по запросу"), "цена по запросу"
         )
 
+    def test_price_slang_is_normalized(self):
+        examples = {
+            "300 рубасов": "300 ₽",
+            "300 рубликов": "300 ₽",
+            "300 ру": "300 ₽",
+            "300 баксов": "$300",
+            "300 бачей": "$300",
+            "300 зеленых": "$300",
+            "300 зелёных": "$300",
+            "300 евриков": "300 €",
+            "5 тыщ": "5000 ₽",
+            "5 тыщонок": "5000 ₽",
+            "1 косарь": "1000 ₽",
+            "2 косаря": "2000 ₽",
+            "5 косарей": "5000 ₽",
+            "3 косарика": "3000 ₽",
+            "2 тонны": "2000 ₽",
+            "4 кэс": "4000 ₽",
+            "4 кеса": "4000 ₽",
+            "1.5 ляма": "1500000 ₽",
+            "2 лимона": "2000000 ₽",
+            "3 кк": "3000000 ₽",
+            "2 мульта": "2000000 ₽",
+            "1 ярд": "1000000000 ₽",
+            "5 косарей баксов": "$5000",
+            "косарь": "1000 ₽",
+            "лям": "1000000 ₽",
+            "полляма": "500000 ₽",
+            "косарь баксов": "$1000",
+        }
+        for value, expected in examples.items():
+            with self.subTest(value=value):
+                self.assertEqual(normalize_user_price(value), expected)
+
 
 class ProductFetchSafetyTest(unittest.IsolatedAsyncioTestCase):
     async def test_local_addresses_are_rejected(self):

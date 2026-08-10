@@ -1,5 +1,6 @@
 import asyncio
 import io
+import logging
 import os
 import re
 import uuid
@@ -28,7 +29,7 @@ from product_metadata import (
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 WEBAPP_URL = os.environ.get("WEBAPP_URL", "https://vgotter.github.io/berezhok/")
-CHECK_INTERVAL_SECONDS = int(os.environ.get("CHECK_INTERVAL_SECONDS", "300"))
+CHECK_INTERVAL_SECONDS = int(os.environ.get("CHECK_INTERVAL_SECONDS", "30"))
 PHOTO_DIR = os.environ.get(
     "PHOTO_DIR", os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), "uploads")
 )
@@ -36,6 +37,7 @@ DAY = 86400000
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+logger = logging.getLogger(__name__)
 
 init_db()
 os.makedirs(PHOTO_DIR, exist_ok=True)
@@ -284,7 +286,7 @@ async def on_draft_action(callback: CallbackQuery):
         prompt = (
             "Пришли новое название одним сообщением. Для выхода напиши «Отмена»."
             if action == "name"
-            else "Пришли новую цену, например: 10000, 10000 руб или $250. Для выхода напиши «Отмена»."
+            else "Пришли новую цену, например: 10000, 5 косарей, 300 баксов или $250. Для выхода напиши «Отмена»."
         )
         await callback.message.answer(prompt)
         await callback.answer()
@@ -413,6 +415,7 @@ async def reminder_loop():
     # Раз в CHECK_INTERVAL_SECONDS проверяет, у кого истёк срок ожидания,
     # и шлёт сообщение с кнопками прямо в чат — то, чего не было в версии без сервера.
     while True:
+        conn = None
         try:
             conn = get_conn()
             now = now_ms()
@@ -464,10 +467,14 @@ async def reminder_loop():
                         conn.execute("UPDATE items SET notified=1 WHERE id=?", (r["id"],))
                         conn.commit()
                     except Exception:
-                        pass
-            conn.close()
+                        logger.exception(
+                            "Не удалось отправить напоминание для item_id=%s", r["id"]
+                        )
         except Exception:
-            pass
+            logger.exception("Ошибка цикла напоминаний")
+        finally:
+            if conn is not None:
+                conn.close()
         await asyncio.sleep(CHECK_INTERVAL_SECONDS)
 
 
