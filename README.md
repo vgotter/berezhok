@@ -2,6 +2,10 @@
 
 Telegram Mini App со списком покупок «на подумать» и ботом-напоминателем.
 
+В текущей версии доступны фотографии, поиск, карточка с редактированием и
+удалением, решения «купила/купил», «уже не надо» и «подождать ещё», а также
+эффект отказов с отдельными итогами по каждой валюте.
+
 ## Фотографии
 
 Мини-приложение уменьшает выбранную фотографию до 1600 px и отправляет её API.
@@ -27,6 +31,31 @@ PHOTO_DIR=/root/berezhok/server/uploads
 ```
 
 В резервную копию нужно включать и `berezhok.db`, и каталог `uploads/`.
+
+### Автоматические резервные копии
+
+`server/backup.py` делает согласованную копию работающей SQLite-базы, добавляет
+в неё фотографии и сохраняет единый архив. Таймер запускает эту операцию раз в
+сутки и хранит архивы 30 дней.
+
+Установка таймера на сервере:
+
+```bash
+mkdir -p /root/backups/berezhok
+cp /root/berezhok/deploy/berezhok-backup.service /etc/systemd/system/
+cp /root/berezhok/deploy/berezhok-backup.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now berezhok-backup.timer
+systemctl start berezhok-backup.service
+systemctl status berezhok-backup.service --no-pager
+ls -lh /root/backups/berezhok
+```
+
+Проверка расписания:
+
+```bash
+systemctl list-timers berezhok-backup.timer --no-pager
+```
 
 Проверка миграции и API фотографий:
 

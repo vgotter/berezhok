@@ -6,8 +6,10 @@ import os
 import sqlite3
 import sys
 import tempfile
+import tarfile
 import unittest
 import urllib.parse
+from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -38,6 +40,20 @@ legacy.execute(
     """
 )
 legacy.execute(
+    """
+    CREATE TABLE settings (
+        user_id INTEGER PRIMARY KEY,
+        default_wait_days REAL DEFAULT 7,
+        hide_waiting INTEGER DEFAULT 0,
+        archive_action TEXT DEFAULT 'archive',
+        archive_after_days REAL DEFAULT 30
+    )
+    """
+)
+legacy.execute(
+    "INSERT INTO settings (user_id, default_wait_days) VALUES (?,?)", (101, 14)
+)
+legacy.execute(
     "INSERT INTO items (id, user_id, name, added_at) VALUES (?,?,?,?)",
     ("old-item", 101, "Старая вещь", 1),
 )
@@ -51,6 +67,7 @@ os.environ["ALLOWED_ORIGIN"] = "https://example.test"
 sys.path.insert(0, os.path.dirname(__file__))
 
 from app import app  # noqa: E402
+import backup  # noqa: E402
 
 
 def auth_headers(user_id):
@@ -73,12 +90,20 @@ class PhotoApiTest(unittest.TestCase):
     def test_01_legacy_database_is_migrated_without_data_loss(self):
         conn = sqlite3.connect(DB_PATH)
         columns = {row[1] for row in conn.execute("PRAGMA table_info(items)")}
+        settings_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(settings)")
+        }
         old_item = conn.execute(
             "SELECT name FROM items WHERE id='old-item'"
         ).fetchone()
+        old_settings = conn.execute(
+            "SELECT default_wait_days, self_pronoun FROM settings WHERE user_id=101"
+        ).fetchone()
         conn.close()
         self.assertIn("photo_filename", columns)
+        self.assertIn("self_pronoun", settings_columns)
         self.assertEqual(old_item[0], "Старая вещь")
+        self.assertEqual(old_settings, (14.0, "she"))
 
     def test_02_existing_json_endpoint_still_works(self):
         response = self.client.post(
@@ -101,6 +126,7 @@ class PhotoApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertTrue(response.json()["hasPhoto"])
         item_id = response.json()["id"]
+        self.__class__.photo_item_id = item_id
 
         photo = self.client.get(
             f"/api/items/{item_id}/photo", headers=auth_headers(101)
@@ -131,6 +157,103 @@ class PhotoApiTest(unittest.TestCase):
         after = conn.execute("SELECT COUNT(*) FROM items").fetchone()[0]
         conn.close()
         self.assertEqual(before, after)
+
+    def test_05_item_can_be_edited_and_photo_removed(self):
+        item_id = self.photo_item_id
+        response = self.client.put(
+            f"/api/items/{item_id}",
+            headers=auth_headers(101),
+            data={
+                "name": "Исправленное название",
+                "url": "https://example.test/item",
+                "price": "$25",
+                "waitDays": "default",
+                "removePhoto": "true",
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertFalse(response.json()["hasPhoto"])
+        missing_photo = self.client.get(
+            f"/api/items/{item_id}/photo", headers=auth_headers(101)
+        )
+        self.assertEqual(missing_photo.status_code, 404)
+        conn = sqlite3.connect(DB_PATH)
+        item = conn.execute(
+            "SELECT name, price, wait_days, photo_filename FROM items WHERE id=?",
+            (item_id,),
+        ).fetchone()
+        conn.close()
+        self.assertEqual(item, ("Исправленное название", "$25", None, None))
+
+    def test_06_snooze_reopens_item_and_resets_notification(self):
+        item_id = self.photo_item_id
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute(
+            "UPDATE items SET archived=1, decision='drop', notified=1 WHERE id=?",
+            (item_id,),
+        )
+        conn.commit()
+        conn.close()
+        response = self.client.post(
+            f"/api/items/{item_id}/snooze",
+            headers=auth_headers(101),
+            json={"days": 3},
+        )
+        self.assertEqual(response.status_code, 200)
+        conn = sqlite3.connect(DB_PATH)
+        item = conn.execute(
+            "SELECT wait_days, archived, decision, notified FROM items WHERE id=?",
+            (item_id,),
+        ).fetchone()
+        conn.close()
+        self.assertEqual(item, (3.0, 0, None, 0))
+
+    def test_07_bought_decision_and_pronoun_are_saved(self):
+        item_id = self.photo_item_id
+        decision = self.client.post(
+            f"/api/items/{item_id}/decide",
+            headers=auth_headers(101),
+            json={"decision": "bought"},
+        )
+        self.assertEqual(decision.status_code, 200)
+        settings = self.client.put(
+            "/api/settings",
+            headers=auth_headers(101),
+            json={"selfPronoun": "he"},
+        )
+        self.assertEqual(settings.status_code, 200)
+        state = self.client.get("/api/state", headers=auth_headers(101)).json()
+        saved = next(item for item in state["items"] if item["id"] == item_id)
+        self.assertEqual(saved["decision"], "bought")
+        self.assertEqual(state["settings"]["selfPronoun"], "he")
+
+    def test_08_delete_is_owner_scoped(self):
+        created = self.client.post(
+            "/api/items",
+            headers=auth_headers(101),
+            json={"name": "Удаляемая вещь"},
+        ).json()["id"]
+        denied = self.client.delete(
+            f"/api/items/{created}", headers=auth_headers(202)
+        )
+        self.assertEqual(denied.status_code, 404)
+        deleted = self.client.delete(
+            f"/api/items/{created}", headers=auth_headers(101)
+        )
+        self.assertEqual(deleted.status_code, 200)
+
+    def test_09_backup_contains_database_and_photos(self):
+        os.makedirs(PHOTO_DIR, exist_ok=True)
+        with open(os.path.join(PHOTO_DIR, "sample.jpg"), "wb") as photo:
+            photo.write(b"test-photo")
+        created = backup.create_backup(
+            datetime(2026, 8, 10, 12, 0, tzinfo=timezone.utc)
+        )
+        self.assertTrue(created.is_file())
+        with tarfile.open(created, "r:gz") as archive:
+            names = archive.getnames()
+        self.assertIn("berezhok.db", names)
+        self.assertIn("uploads/sample.jpg", names)
 
 
 if __name__ == "__main__":

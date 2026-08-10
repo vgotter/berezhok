@@ -73,11 +73,16 @@ class DecisionIn(BaseModel):
     decision: str
 
 
+class SnoozeIn(BaseModel):
+    days: float
+
+
 class SettingsIn(BaseModel):
     defaultWaitDays: Optional[float] = None
     hideWaiting: Optional[bool] = None
     archiveAction: Optional[str] = None
     archiveAfterDays: Optional[float] = None
+    selfPronoun: Optional[str] = None
 
 
 def row_to_item(r):
@@ -161,6 +166,7 @@ def settings_to_dict(row):
         "hideWaiting": bool(row["hide_waiting"]),
         "archiveAction": row["archive_action"],
         "archiveAfterDays": row["archive_after_days"],
+        "selfPronoun": row["self_pronoun"] or "she",
     }
 
 
@@ -268,6 +274,84 @@ async def create_item_with_photo(
     return {"id": item_id, "hasPhoto": bool(filename)}
 
 
+def parse_wait_days(value: Optional[str]) -> Optional[float]:
+    if value is None or value in ("", "default"):
+        return None
+    try:
+        days = float(value)
+    except ValueError:
+        raise HTTPException(422, "invalid wait time")
+    if not math.isfinite(days) or days < 0 or days > 3650:
+        raise HTTPException(422, "invalid wait time")
+    return days
+
+
+@app.put("/api/items/{item_id}")
+async def update_item(
+    item_id: str,
+    name: str = Form(...),
+    url: str = Form(""),
+    price: str = Form(""),
+    waitDays: Optional[str] = Form(None),
+    removePhoto: bool = Form(False),
+    photo: Optional[UploadFile] = File(None),
+    user_id: int = Depends(get_user_id),
+):
+    name = name.strip()
+    url = url.strip()
+    price = price.strip()
+    if not name or len(name) > 200:
+        raise HTTPException(422, "name must contain 1 to 200 characters")
+    if len(url) > 2000 or len(price) > 100:
+        raise HTTPException(422, "item fields are too long")
+    wait_days = parse_wait_days(waitDays)
+
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT photo_filename FROM items WHERE id=? AND user_id=?",
+        (item_id, user_id),
+    ).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(404, "not found")
+
+    old_filename = row["photo_filename"]
+    new_filename = old_filename
+    try:
+        if photo is not None and photo.filename:
+            new_filename = await store_photo(photo, item_id)
+        elif removePhoto:
+            new_filename = None
+        conn.execute(
+            "UPDATE items SET name=?, url=?, price=?, wait_days=?, "
+            "photo_filename=? WHERE id=? AND user_id=?",
+            (name, url, price, wait_days, new_filename, item_id, user_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    if removePhoto and old_filename and new_filename is None:
+        remove_photo(old_filename)
+    return {"ok": True, "hasPhoto": bool(new_filename)}
+
+
+@app.delete("/api/items/{item_id}")
+def delete_item(item_id: str, user_id: int = Depends(get_user_id)):
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT photo_filename FROM items WHERE id=? AND user_id=?",
+        (item_id, user_id),
+    ).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(404, "not found")
+    conn.execute("DELETE FROM items WHERE id=? AND user_id=?", (item_id, user_id))
+    conn.commit()
+    conn.close()
+    remove_photo(row["photo_filename"])
+    return {"ok": True}
+
+
 @app.get("/api/items/{item_id}/photo")
 def get_item_photo(item_id: str, user_id: int = Depends(get_user_id)):
     conn = get_conn()
@@ -290,6 +374,8 @@ def get_item_photo(item_id: str, user_id: int = Depends(get_user_id)):
 
 @app.post("/api/items/{item_id}/decide")
 def decide_item(item_id: str, body: DecisionIn, user_id: int = Depends(get_user_id)):
+    if body.decision not in {"keep", "drop", "bought"}:
+        raise HTTPException(422, "invalid decision")
     conn = get_conn()
     row = conn.execute(
         "SELECT * FROM items WHERE id=? AND user_id=?", (item_id, user_id)
@@ -306,6 +392,27 @@ def decide_item(item_id: str, body: DecisionIn, user_id: int = Depends(get_user_
     return {"ok": True}
 
 
+@app.post("/api/items/{item_id}/snooze")
+def snooze_item(item_id: str, body: SnoozeIn, user_id: int = Depends(get_user_id)):
+    if not math.isfinite(body.days) or body.days <= 0 or body.days > 3650:
+        raise HTTPException(422, "invalid snooze time")
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT id FROM items WHERE id=? AND user_id=?", (item_id, user_id)
+    ).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(404, "not found")
+    conn.execute(
+        "UPDATE items SET added_at=?, wait_days=?, decision=NULL, decided_at=NULL, "
+        "archived=0, notified=0 WHERE id=? AND user_id=?",
+        (now_ms(), body.days, item_id, user_id),
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
 @app.put("/api/settings")
 def update_settings(body: SettingsIn, user_id: int = Depends(get_user_id)):
     conn = get_conn()
@@ -315,11 +422,15 @@ def update_settings(body: SettingsIn, user_id: int = Depends(get_user_id)):
         "hideWaiting": "hide_waiting",
         "archiveAction": "archive_action",
         "archiveAfterDays": "archive_after_days",
+        "selfPronoun": "self_pronoun",
     }
-    data = body.dict(exclude_none=True)
+    data = body.model_dump(exclude_none=True)
     fields, values = [], []
     for key, value in data.items():
         col = mapping[key]
+        if col == "self_pronoun" and value not in {"she", "he"}:
+            conn.close()
+            raise HTTPException(422, "invalid pronoun")
         if col == "hide_waiting":
             value = int(value)
         fields.append(f"{col}=?")

@@ -84,6 +84,26 @@
   }
   .add-btn:active{opacity:0.85;}
 
+  .effect{
+    display:none;background:var(--waiting-soft);border:1px solid #C9D4C6;
+    border-radius:14px;padding:14px 15px;margin:-14px 0 16px;
+  }
+  .effect.visible{display:block;}
+  .effect-title{font-family:'Fraunces',serif;font-size:16px;font-weight:600;color:var(--waiting);}
+  .effect-text{font-size:12.5px;line-height:1.45;color:var(--ink-soft);margin-top:3px;}
+  .search-wrap{position:relative;margin:0 0 22px;}
+  .search-wrap svg{position:absolute;left:12px;top:12px;width:17px;height:17px;color:var(--ink-soft);}
+  .search-input{
+    width:100%;border:1px solid var(--line);border-radius:12px;
+    padding:11px 36px 11px 38px;font:14px 'Inter',sans-serif;
+    background:var(--paper-raised);color:var(--ink);
+  }
+  .search-input:focus{outline:2px solid var(--waiting);outline-offset:1px;}
+  .search-clear{position:absolute;right:7px;top:5px;border:0;background:none;color:var(--ink-soft);font-size:20px;cursor:pointer;display:none;}
+  .search-clear.visible{display:block;}
+  .search-empty{display:none;margin-bottom:24px;}
+  .search-empty.visible{display:block;}
+
   .section{margin-bottom:28px;}
   .section-head{
     display:flex;align-items:baseline;justify-content:space-between;
@@ -121,6 +141,8 @@
     margin-bottom:10px;
     border:1px solid var(--line);
   }
+  .card.clickable{cursor:pointer;}
+  .card.clickable:active{transform:scale(.995);}
   .card.waiting-card{
     opacity:0.72;
   }
@@ -157,13 +179,16 @@
   }
 
   .actions{display:flex;gap:8px;margin-top:12px;}
+  .actions.ready-actions{display:grid;grid-template-columns:1fr 1fr;}
   .btn{
     flex:1;border-radius:10px;border:1px solid var(--line);
     background:transparent;padding:10px 8px;font-size:13px;font-weight:600;
     cursor:pointer;font-family:'Inter',sans-serif;color:var(--ink);
   }
   .btn.keep{background:var(--ready);border-color:var(--ready);color:#fff;}
+  .btn.bought{background:var(--waiting);border-color:var(--waiting);color:#fff;}
   .btn.drop{color:var(--ink-soft);}
+  .btn.snooze{flex-basis:100%;}
   .btn:active{opacity:0.8;}
   .btn.small{flex:none;padding:8px 10px;font-size:12px;}
 
@@ -242,6 +267,23 @@
     border:none;border-radius:12px;padding:13px;font-size:15px;font-weight:600;
     cursor:pointer;margin-top:6px;font-family:'Inter',sans-serif;
   }
+  .submit-btn:disabled{opacity:.55;cursor:default;}
+  .danger-btn{
+    width:100%;border:1px solid #D8B9AF;background:transparent;color:var(--danger);
+    border-radius:12px;padding:12px;font:600 13px 'Inter',sans-serif;cursor:pointer;margin-top:10px;
+  }
+  .detail-photo{
+    width:100%;aspect-ratio:16/10;border-radius:14px;background:var(--archive-soft);
+    display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:14px;
+    font-family:'Fraunces',serif;font-size:42px;color:var(--ink-soft);
+  }
+  .detail-photo img{width:100%;height:100%;object-fit:contain;background:#DCD5C4;}
+  .detail-status{font-size:11px;color:var(--ink-soft);margin:-8px 0 14px;}
+  .detail-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;}
+  .detail-actions .btn{width:100%;}
+  .detail-actions .wide{grid-column:1/-1;}
+  .snooze-options{display:grid;grid-template-columns:1fr 1fr;gap:9px;}
+  .snooze-option{border:1px solid var(--line);background:var(--paper-raised);border-radius:12px;padding:14px 8px;font:600 14px 'Inter',sans-serif;color:var(--ink);cursor:pointer;}
   .toggle-row{
     display:flex;align-items:center;justify-content:space-between;
     padding:12px 0;border-bottom:1px solid var(--line);
@@ -293,6 +335,18 @@
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
       Добавить вещь
     </button>
+
+    <div class="effect" id="effectCard">
+      <div class="effect-title" id="effectTitle"></div>
+      <div class="effect-text" id="effectText"></div>
+    </div>
+
+    <div class="search-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input class="search-input" id="searchInput" type="search" placeholder="Найти вещь" autocomplete="off">
+      <button class="search-clear" id="searchClear" type="button" aria-label="Очистить поиск">×</button>
+    </div>
+    <div class="empty search-empty" id="searchEmpty">Ничего не нашлось. Попробуй другое слово.</div>
 
     <div class="section" id="readySection">
       <div class="section-head">
@@ -392,12 +446,92 @@
   </div>
 </div>
 
+<!-- Item detail sheet -->
+<div class="overlay" id="detailOverlay">
+  <div class="sheet">
+    <div class="sheet-head">
+      <span class="sheet-title">Карточка вещи</span>
+      <button class="close-x" id="closeDetail" aria-label="Закрыть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div class="detail-photo" id="detailPhoto"></div>
+    <div class="detail-status" id="detailStatus"></div>
+    <form id="detailForm">
+      <div class="field">
+        <label for="d-name">Название</label>
+        <input type="text" id="d-name" required maxlength="200">
+      </div>
+      <div class="field">
+        <label for="d-url">Ссылка</label>
+        <input type="url" id="d-url" placeholder="https://…">
+      </div>
+      <div class="field">
+        <label>Фотография</label>
+        <div class="photo-picker">
+          <input type="file" id="d-photo" accept="image/*">
+          <label for="d-photo" class="photo-add"><span aria-hidden="true">↻</span> Заменить фотографию</label>
+          <button type="button" class="photo-remove" id="detailPhotoRemove">Убрать фото</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="d-price">Цена</label>
+        <div class="price-row">
+          <input type="number" id="d-price" inputmode="decimal" min="0" step="any">
+          <select id="d-currency"></select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="d-wait">Срок ожидания</label>
+        <select id="d-wait">
+          <option value="default">Как обычно (настройки)</option>
+          <option value="0.0417">Час (для теста)</option>
+          <option value="3">3 дня</option>
+          <option value="7">Неделю</option>
+          <option value="14">Две недели</option>
+          <option value="30">Месяц</option>
+        </select>
+      </div>
+      <button type="submit" class="submit-btn">Сохранить изменения</button>
+    </form>
+    <div class="detail-actions" id="detailActions">
+      <button class="btn bought" type="button" data-detail-action="bought"></button>
+      <button class="btn drop" type="button" data-detail-action="drop">Уже не надо</button>
+      <button class="btn" type="button" data-detail-action="keep">Оставить в желаниях</button>
+      <button class="btn snooze" type="button" data-detail-action="snooze">Подождать ещё</button>
+    </div>
+    <button type="button" class="danger-btn" id="deleteItem">Удалить вещь</button>
+  </div>
+</div>
+
+<!-- Snooze sheet -->
+<div class="overlay" id="snoozeOverlay">
+  <div class="sheet">
+    <div class="sheet-head">
+      <span class="sheet-title">Подождать ещё</span>
+      <button class="close-x" id="closeSnooze" aria-label="Закрыть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div class="snooze-options">
+      <button class="snooze-option" data-snooze-days="3">3 дня</button>
+      <button class="snooze-option" data-snooze-days="7">Неделю</button>
+      <button class="snooze-option" data-snooze-days="14">Две недели</button>
+      <button class="snooze-option" data-snooze-days="30">Месяц</button>
+    </div>
+  </div>
+</div>
+
 <!-- Settings sheet -->
 <div class="overlay" id="settingsOverlay">
   <div class="sheet">
     <div class="sheet-head">
       <span class="sheet-title">Настройки</span>
       <button class="close-x" id="closeSettings" aria-label="Закрыть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+
+    <div class="field">
+      <label for="s-pronoun">Я:</label>
+      <select id="s-pronoun">
+        <option value="she">она</option>
+        <option value="he">он</option>
+      </select>
     </div>
 
     <div class="field">
@@ -421,7 +555,7 @@
     </div>
 
     <div class="field" style="margin-top:14px;">
-      <label for="s-archiveAction">Если не приняла решение за месяц</label>
+      <label for="s-archiveAction" id="archiveDecisionLabel">Если не приняла решение за месяц</label>
       <select id="s-archiveAction">
         <option value="archive">Переносить в архив</option>
         <option value="delete">Просто убирать из списка</option>
@@ -429,399 +563,13 @@
     </div>
 
     <div class="field-note" style="margin-top:16px;">
-      Пока бот не присылает напоминания сам — приложение покажет, что пора решать, когда ты зайдёшь. Уведомления от бота — следующий шаг.
+      Когда срок ожидания закончится, бот пришлёт сообщение с вариантами решения.
     </div>
   </div>
 </div>
 
 <div class="toast" id="toast"></div>
 
-<script>
-(function(){
-  const DAY = 86400000;
-  let items = [];
-  let settings = { defaultWaitDays: 7, hideWaiting: false, archiveAction: 'archive', archiveAfterDays: 30 };
-  let archiveOpen = false;
-  let selectedPhoto = null;
-  let previewObjectUrl = null;
-  const photoObjectUrls = new Map();
-
-  const $ = (id) => document.getElementById(id);
-
-  function showToast(msg){
-    const t = $('toast');
-    t.textContent = msg;
-    t.classList.add('show');
-    clearTimeout(showToast._h);
-    showToast._h = setTimeout(()=>t.classList.remove('show'), 1800);
-  }
-
-  // --- storage layer ---
-  // Данные теперь живут на сервере (не в Telegram CloudStorage) — это нужно,
-  // чтобы бот сам мог по расписанию проверять сроки и слать напоминания.
-  // ЗАМЕНИ на адрес своего сервера после деплоя на TimeWeb.
-  const API_BASE = 'https://api.my-berezhok-bot.net.ru';
-
-  const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
-  const initData = tg ? tg.initData : '';
-
-  async function api(path, options){
-    const isForm = options && options.body instanceof FormData;
-    const defaultHeaders = { 'X-Telegram-Init-Data': initData };
-    if(!isForm) defaultHeaders['Content-Type'] = 'application/json';
-    const res = await fetch(API_BASE + path, Object.assign({
-      headers: Object.assign(defaultHeaders, (options && options.headers) || {})
-    }, options));
-    if(!res.ok) throw new Error('API error ' + res.status);
-    return res.status === 204 ? null : res.json();
-  }
-
-  async function loadData(){
-    try{
-      const state = await api('/api/state');
-      items = state.items;
-      settings = Object.assign(settings, state.settings);
-      await loadPhotoUrls();
-    }catch(e){
-      showToast('Не удалось загрузить данные — проверь связь с сервером');
-    }
-  }
-
-  async function createItemOnServer(payload, photo){
-    const form = new FormData();
-    form.append('name', payload.name);
-    form.append('url', payload.url);
-    form.append('price', payload.price);
-    if(payload.waitDays !== null) form.append('waitDays', String(payload.waitDays));
-    if(photo) form.append('photo', photo, 'photo.jpg');
-    return api('/api/items-with-photo', { method: 'POST', body: form });
-  }
-  async function decideOnServer(id, decision){
-    return api(`/api/items/${id}/decide`, { method: 'POST', body: JSON.stringify({ decision }) });
-  }
-  async function saveSettings(partial){
-    try{ await api('/api/settings', { method: 'PUT', body: JSON.stringify(partial) }); }
-    catch(e){ showToast('Не получилось сохранить настройки'); }
-  }
-
-  async function loadPhotoUrls(){
-    const wanted = new Set(items.filter(it=>it.hasPhoto).map(it=>it.id));
-    for(const [id, objectUrl] of photoObjectUrls){
-      if(!wanted.has(id)){
-        URL.revokeObjectURL(objectUrl);
-        photoObjectUrls.delete(id);
-      }
-    }
-    await Promise.all(items.filter(it=>it.hasPhoto && !photoObjectUrls.has(it.id)).map(async it=>{
-      try{
-        const res = await fetch(`${API_BASE}/api/items/${it.id}/photo`, {
-          headers: { 'X-Telegram-Init-Data': initData }
-        });
-        if(!res.ok) return;
-        photoObjectUrls.set(it.id, URL.createObjectURL(await res.blob()));
-      }catch(e){}
-    }));
-  }
-
-  function fmtDays(n){
-    const abs = Math.abs(n);
-    const rem = abs % 10, rem100 = abs % 100;
-    let word = 'дней';
-    if(rem100 < 11 || rem100 > 14){
-      if(rem === 1) word = 'день';
-      else if(rem>=2 && rem<=4) word = 'дня';
-    }
-    return abs + ' ' + word;
-  }
-
-  function itemStatus(it){
-    if(it.archived) return 'archived';
-    if(it.decision) return 'archived';
-    const wait = (it.waitDays || settings.defaultWaitDays) * DAY;
-    const readyAt = it.addedAt + wait;
-    return Date.now() >= readyAt ? 'ready' : 'waiting';
-  }
-
-  function thumbHTML(it){
-    const photoUrl = photoObjectUrls.get(it.id);
-    if(photoUrl){
-      return `<div class="thumb"><img src="${escAttr(photoUrl)}" alt=""></div>`;
-    }
-    return `<div class="thumb">${escHTML((it.name||'?').charAt(0).toUpperCase())}</div>`;
-  }
-
-  function escHTML(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-  function escAttr(s){ return escHTML(s); }
-
-  function renderReadyCard(it){
-    const nameEl = it.url
-      ? `<a class="card-name" href="${escAttr(it.url)}" target="_blank" rel="noopener">${escHTML(it.name)}</a>`
-      : `<span class="card-name">${escHTML(it.name)}</span>`;
-    return `
-    <div class="card" data-id="${it.id}">
-      <div class="card-top">
-        ${thumbHTML(it)}
-        <div class="card-info">
-          ${nameEl}
-          ${it.price ? `<div class="card-price">${escHTML(it.price)}</div>` : ''}
-        </div>
-      </div>
-      <div class="gauge-row">
-        <div class="gauge"><div class="gauge-fill is-ready" style="width:100%"></div></div>
-        <span class="gauge-label">пора решать</span>
-      </div>
-      <div class="actions">
-        <button class="btn keep" data-action="keep" data-id="${it.id}">Всё ещё хочу</button>
-        <button class="btn drop" data-action="drop" data-id="${it.id}">Уже не надо</button>
-      </div>
-    </div>`;
-  }
-
-  function fmtRemaining(ms){
-    if(ms < 3600000) return Math.max(1, Math.round(ms / 60000)) + ' мин';
-    if(ms < DAY) return Math.max(1, Math.round(ms / 3600000)) + ' ч';
-    return fmtDays(Math.ceil(ms / DAY));
-  }
-
-  function renderWaitingCard(it){
-    const wait = (it.waitDays || settings.defaultWaitDays);
-    const waitMs = wait * DAY;
-    const elapsed = Date.now() - it.addedAt;
-    const pct = Math.max(3, Math.min(100, Math.round((elapsed / waitMs) * 100)));
-    const msLeft = Math.max(0, waitMs - elapsed);
-    const nameEl = it.url
-      ? `<a class="card-name" href="${escAttr(it.url)}" target="_blank" rel="noopener">${escHTML(it.name)}</a>`
-      : `<span class="card-name">${escHTML(it.name)}</span>`;
-    return `
-    <div class="card waiting-card" data-id="${it.id}">
-      <div class="card-top">
-        ${thumbHTML(it)}
-        <div class="card-info">
-          ${nameEl}
-          ${it.price ? `<div class="card-price">${escHTML(it.price)}</div>` : ''}
-        </div>
-      </div>
-      <div class="gauge-row">
-        <div class="gauge"><div class="gauge-fill" style="width:${pct}%"></div></div>
-        <span class="gauge-label">ещё ${fmtRemaining(msLeft)}</span>
-      </div>
-    </div>`;
-  }
-
-  function renderArchiveRow(it){
-    const badge = it.decision === 'keep'
-      ? '<span class="badge kept">оставила в желаниях</span>'
-      : it.decision === 'expired'
-      ? '<span class="badge expired">истёк срок</span>'
-      : '<span class="badge dropped">отказалась</span>';
-    const nameEl = it.url
-      ? `<a class="card-name" href="${escAttr(it.url)}" target="_blank" rel="noopener">${escHTML(it.name)}</a>`
-      : `<span class="card-name">${escHTML(it.name)}</span>`;
-    return `
-    <div class="card" data-id="${it.id}" style="opacity:0.85;">
-      <div class="card-top">
-        ${thumbHTML(it)}
-        <div class="card-info">
-          ${nameEl}
-          ${it.price ? `<div class="card-price">${escHTML(it.price)}</div>` : ''}
-          ${badge}
-        </div>
-      </div>
-    </div>`;
-  }
-
-  function render(){
-    const ready = items.filter(it => itemStatus(it) === 'ready');
-    const waiting = items.filter(it => itemStatus(it) === 'waiting');
-    const archived = items.filter(it => itemStatus(it) === 'archived');
-
-    $('readyCount').textContent = ready.length;
-    $('waitingCount').textContent = waiting.length;
-    $('archiveCount').textContent = archived.length;
-
-    $('readyList').innerHTML = ready.length
-      ? ready.map(renderReadyCard).join('')
-      : `<div class="empty">Пока нечего решать. Как только что-то отлежится — появится здесь.</div>`;
-
-    if(settings.hideWaiting){
-      $('waitingSection').style.display = waiting.length ? 'block' : 'none';
-      if(waiting.length){
-        $('waitingList').innerHTML = `<div class="peek" id="peekWaiting">Кое-что ещё «остывает» (${waiting.length}) — посмотреть</div>`;
-        const peek = $('peekWaiting');
-        if(peek) peek.addEventListener('click', ()=>{
-          $('waitingList').innerHTML = waiting.map(renderWaitingCard).join('');
-        });
-      }
-    } else {
-      $('waitingSection').style.display = 'block';
-      $('waitingList').innerHTML = waiting.length
-        ? waiting.map(renderWaitingCard).join('')
-        : `<div class="empty">Список ожидания пуст. Добавь то, на что смотришь прямо сейчас — вернёмся к этому позже.</div>`;
-    }
-
-    $('archiveList').innerHTML = archived.length
-      ? archived.slice().reverse().map(renderArchiveRow).join('')
-      : `<div class="empty">Архив пуст.</div>`;
-    $('archiveList').style.display = archiveOpen ? 'block' : 'none';
-    $('archiveToggle').innerHTML = `Архив (<span id="archiveCount">${archived.length}</span>) — ${archiveOpen ? 'скрыть' : 'показать'}`;
-
-    document.querySelectorAll('[data-action]').forEach(btn=>{
-      btn.addEventListener('click', onDecision);
-    });
-  }
-
-  async function onDecision(e){
-    const id = e.currentTarget.getAttribute('data-id');
-    const action = e.currentTarget.getAttribute('data-action');
-    try{
-      await decideOnServer(id, action);
-      await loadData();
-      render();
-      showToast(action === 'keep' ? 'Записала — она всё ещё в игре' : 'Убрала из списка');
-    }catch(err){
-      showToast('Не получилось сохранить — проверь связь');
-    }
-  }
-
-  // add form
-  $('openAddBtn').addEventListener('click', ()=> $('addOverlay').classList.add('open'));
-  $('closeAdd').addEventListener('click', ()=> $('addOverlay').classList.remove('open'));
-  $('addOverlay').addEventListener('click', (e)=>{ if(e.target.id === 'addOverlay') $('addOverlay').classList.remove('open'); });
-
-  function clearSelectedPhoto(){
-    selectedPhoto = null;
-    $('f-photo').value = '';
-    if(previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
-    previewObjectUrl = null;
-    $('photoPreviewImage').removeAttribute('src');
-    $('photoPreview').classList.remove('visible');
-    $('photoAddLabel').hidden = false;
-  }
-
-  $('f-photo').addEventListener('change', ()=>{
-    const file = $('f-photo').files && $('f-photo').files[0];
-    if(!file) return clearSelectedPhoto();
-    if(file.type && !file.type.startsWith('image/')){
-      clearSelectedPhoto();
-      return showToast('Нужен файл с фотографией');
-    }
-    if(file.size > 20 * 1024 * 1024){
-      clearSelectedPhoto();
-      return showToast('Фото слишком большое — выбери до 20 МБ');
-    }
-    clearSelectedPhoto();
-    selectedPhoto = file;
-    previewObjectUrl = URL.createObjectURL(file);
-    $('photoPreviewImage').src = previewObjectUrl;
-    $('photoPreviewName').textContent = file.name || 'Выбранное фото';
-    $('photoPreview').classList.add('visible');
-    $('photoAddLabel').hidden = true;
-  });
-  $('photoRemove').addEventListener('click', clearSelectedPhoto);
-
-  async function compressPhoto(file){
-    const objectUrl = URL.createObjectURL(file);
-    try{
-      const image = new Image();
-      await new Promise((resolve, reject)=>{
-        image.onload = resolve;
-        image.onerror = reject;
-        image.src = objectUrl;
-      });
-      const maxSide = 1600;
-      const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-      canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
-      return await new Promise((resolve, reject)=>{
-        canvas.toBlob(blob=>blob ? resolve(blob) : reject(new Error('image conversion failed')), 'image/jpeg', 0.84);
-      });
-    }finally{
-      URL.revokeObjectURL(objectUrl);
-    }
-  }
-
-  $('addForm').addEventListener('submit', async (e)=>{
-    e.preventDefault();
-    const name = $('f-name').value.trim();
-    if(!name) return;
-    const waitSel = $('f-wait').value;
-    const payload = {
-      name,
-      url: $('f-url').value.trim(),
-      price: (function(){
-        const v = $('f-price').value.trim();
-        if(!v) return '';
-        const cur = $('f-currency').value;
-        return cur === '$' || cur === '£' ? cur + v : v + ' ' + cur;
-      })(),
-      waitDays: waitSel === 'default' ? null : parseFloat(waitSel)
-    };
-    const submit = e.currentTarget.querySelector('[type="submit"]');
-    submit.disabled = true;
-    submit.textContent = selectedPhoto ? 'Готовим фотографию…' : 'Сохраняем…';
-    try{
-      const photo = selectedPhoto ? await compressPhoto(selectedPhoto) : null;
-      submit.textContent = 'Сохраняем…';
-      await createItemOnServer(payload, photo);
-      $('addForm').reset();
-      clearSelectedPhoto();
-      $('addOverlay').classList.remove('open');
-      await loadData();
-      render();
-      showToast('Положила в лист ожидания');
-    }catch(err){
-      showToast('Не получилось сохранить вещь или фото');
-    }finally{
-      submit.disabled = false;
-      submit.textContent = 'Положить в лист ожидания';
-    }
-  });
-
-  // settings
-  $('settingsBtn').addEventListener('click', ()=>{
-    $('s-wait').value = String(settings.defaultWaitDays);
-    $('s-hideToggle').classList.toggle('on', !settings.hideWaiting);
-    $('s-archiveAction').value = settings.archiveAction;
-    $('settingsOverlay').classList.add('open');
-  });
-  $('closeSettings').addEventListener('click', ()=> $('settingsOverlay').classList.remove('open'));
-  $('settingsOverlay').addEventListener('click', (e)=>{ if(e.target.id === 'settingsOverlay') $('settingsOverlay').classList.remove('open'); });
-
-  $('s-wait').addEventListener('change', async ()=>{
-    settings.defaultWaitDays = parseFloat($('s-wait').value);
-    await saveSettings({ defaultWaitDays: settings.defaultWaitDays });
-    render();
-  });
-  $('s-hideToggle').addEventListener('click', async ()=>{
-    const nowOn = !$('s-hideToggle').classList.contains('on');
-    $('s-hideToggle').classList.toggle('on', nowOn);
-    settings.hideWaiting = !nowOn; // switch ON means "показывать" -> hideWaiting = false
-    await saveSettings({ hideWaiting: settings.hideWaiting });
-    render();
-  });
-  $('s-archiveAction').addEventListener('change', async ()=>{
-    settings.archiveAction = $('s-archiveAction').value;
-    await saveSettings({ archiveAction: settings.archiveAction });
-  });
-
-  $('archiveToggle').addEventListener('click', ()=>{
-    archiveOpen = !archiveOpen;
-    render();
-  });
-
-  (async function init(){
-    if(tg){
-      tg.ready();
-      tg.expand();
-      try{ tg.setHeaderColor('#EDE9E0'); }catch(e){}
-      try{ tg.setBackgroundColor('#EDE9E0'); }catch(e){}
-    }
-    await loadData();
-    render();
-  })();
-})();
-</script>
+<script src="app.js?v=20260810-2"></script>
 </body>
 </html>

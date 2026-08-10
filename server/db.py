@@ -50,10 +50,22 @@ def init_db():
             default_wait_days REAL DEFAULT 7,
             hide_waiting INTEGER DEFAULT 0,
             archive_action TEXT DEFAULT 'archive',
-            archive_after_days REAL DEFAULT 30
+            archive_after_days REAL DEFAULT 30,
+            self_pronoun TEXT DEFAULT 'she'
         )
         """
     )
+    settings_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(settings)")
+    }
+    if "self_pronoun" not in settings_columns:
+        try:
+            conn.execute(
+                "ALTER TABLE settings ADD COLUMN self_pronoun TEXT DEFAULT 'she'"
+            )
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise
     conn.commit()
     conn.close()
 
