@@ -26,6 +26,8 @@
   let detailPreviewObjectUrl = null;
   let detailRemovePhoto = false;
   let pendingSnoozeId = null;
+  let refreshPromise = null;
+  let lastRefreshAt = 0;
   const photoObjectUrls = new Map();
 
   const $ = (id) => document.getElementById(id);
@@ -65,6 +67,21 @@
     }catch(error){
       showToast('Не удалось загрузить данные — проверь связь с сервером');
       return false;
+    }
+  }
+
+  async function refreshWhenActive(){
+    const now = Date.now();
+    if(refreshPromise || now - lastRefreshAt < 1000) return refreshPromise;
+    lastRefreshAt = now;
+    refreshPromise = (async ()=>{
+      const loaded = await loadData();
+      if(loaded) render();
+    })();
+    try{
+      await refreshPromise;
+    }finally{
+      refreshPromise = null;
     }
   }
 
@@ -728,10 +745,22 @@
     if(tg){
       tg.ready();
       tg.expand();
+      if(typeof tg.onEvent === 'function'){
+        tg.onEvent('activated', refreshWhenActive);
+      }
       try{ tg.setHeaderColor('#EDE9E0'); }catch(error){}
       try{ tg.setBackgroundColor('#EDE9E0'); }catch(error){}
     }
+    document.addEventListener('visibilitychange', ()=>{
+      if(!document.hidden) refreshWhenActive();
+    });
+    window.addEventListener('focus', refreshWhenActive);
+    window.addEventListener('pageshow', refreshWhenActive);
+    setInterval(()=>{
+      if(!document.hidden) refreshWhenActive();
+    }, 60000);
     await loadData();
+    lastRefreshAt = Date.now();
     render();
   })();
 })();

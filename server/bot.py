@@ -14,7 +14,11 @@ from aiogram.filters import CommandStart
 from db import get_conn, init_db, now_ms
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
-WEBAPP_URL = os.environ.get("WEBAPP_URL", "https://vgotter.github.io/berezhok/")
+WEBAPP_URL_BASE = os.environ.get("WEBAPP_URL", "https://vgotter.github.io/berezhok/")
+APP_VERSION = os.environ.get("APP_VERSION", "20260810-3")
+WEBAPP_URL = (
+    f"{WEBAPP_URL_BASE}{'&' if '?' in WEBAPP_URL_BASE else '?'}v={APP_VERSION}"
+)
 CHECK_INTERVAL_SECONDS = int(os.environ.get("CHECK_INTERVAL_SECONDS", "300"))
 DAY = 86400000
 
