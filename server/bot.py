@@ -6,6 +6,7 @@ import re
 import time
 import uuid
 from contextlib import suppress
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from aiogram import Bot, Dispatcher, F
@@ -21,6 +22,7 @@ from aiogram.filters import Command, CommandStart
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from db import DB_PATH, get_conn, init_db, new_id, now_ms
+from gentle_reminders import reminder_candidates, reminder_text
 from product_metadata import (
     ProductFetchError,
     fetch_product_image,
@@ -568,6 +570,30 @@ async def reminder_loop():
                             "🟠 Бережок не смог отправить одно из напоминаний. "
                             "Он попробует снова автоматически.",
                         )
+            # Тихое напоминание приходит только после недели без открытия
+            # приложения и только днём. Активным людям оно не мешает.
+            if 8 <= datetime.now(timezone.utc).hour < 19:
+                for setting in reminder_candidates(conn, now):
+                    try:
+                        await bot.send_message(
+                            setting["user_id"],
+                            reminder_text(setting["user_id"], now),
+                            reply_markup=open_app_keyboard(),
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Не удалось отправить тихое напоминание user_id=%s",
+                            setting["user_id"],
+                        )
+                    finally:
+                        # Не повторяем попытку каждые 30 секунд: даже при временной
+                        # ошибке следующий аккуратный сигнал будет не раньше недели.
+                        conn.execute(
+                            "UPDATE settings SET last_gentle_reminder_at=? "
+                            "WHERE user_id=?",
+                            (now, setting["user_id"]),
+                        )
+                        conn.commit()
         except Exception:
             logger.exception("Ошибка цикла напоминаний")
             await send_monitor_alert(

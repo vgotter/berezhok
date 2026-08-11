@@ -61,21 +61,30 @@ def init_db():
             hide_waiting INTEGER DEFAULT 0,
             archive_action TEXT DEFAULT 'archive',
             archive_after_days REAL DEFAULT 30,
-            self_pronoun TEXT DEFAULT 'she'
+            self_pronoun TEXT DEFAULT 'she',
+            gentle_reminders INTEGER DEFAULT 1,
+            last_seen_at INTEGER,
+            last_gentle_reminder_at INTEGER
         )
         """
     )
     settings_columns = {
         row["name"] for row in conn.execute("PRAGMA table_info(settings)")
     }
-    if "self_pronoun" not in settings_columns:
-        try:
-            conn.execute(
-                "ALTER TABLE settings ADD COLUMN self_pronoun TEXT DEFAULT 'she'"
-            )
-        except sqlite3.OperationalError as exc:
-            if "duplicate column name" not in str(exc).lower():
-                raise
+    for column, definition in (
+        ("self_pronoun", "TEXT DEFAULT 'she'"),
+        ("gentle_reminders", "INTEGER DEFAULT 1"),
+        ("last_seen_at", "INTEGER"),
+        ("last_gentle_reminder_at", "INTEGER"),
+    ):
+        if column not in settings_columns:
+            try:
+                conn.execute(
+                    f"ALTER TABLE settings ADD COLUMN {column} {definition}"
+                )
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" not in str(exc).lower():
+                    raise
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS pending_links (

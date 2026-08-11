@@ -626,7 +626,15 @@
         <div class="label">Показывать список ожидания</div>
         <div class="sub">Если выключить — вещи, которые ещё «остывают», будут скрыты, пока не придёт время решать</div>
       </div>
-      <button class="switch" id="s-hideToggle" role="switch" aria-checked="true"><span class="dot"></span></button>
+      <button class="switch" id="s-hideToggle" role="switch" aria-label="Показывать список ожидания" aria-checked="true"><span class="dot"></span></button>
+    </div>
+
+    <div class="toggle-row">
+      <div>
+        <div class="label">Тихие напоминания</div>
+        <div class="sub">Если неделю не заглядывать, Бережок аккуратно напомнит о себе</div>
+      </div>
+      <button class="switch" id="s-gentleToggle" role="switch" aria-label="Тихие напоминания" aria-checked="true"><span class="dot"></span></button>
     </div>
 
     <div class="field" style="margin-top:14px;">
@@ -759,6 +767,6 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"><span id="toastText"></span><button type="button" class="toast-action" id="toastAction" hidden></button></div>
 
-<script src="app.js?v=20260810-9"></script>
+<script src="app.js?v=20260811-1"></script>
 </body>
 </html>

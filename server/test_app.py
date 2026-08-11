@@ -70,6 +70,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from app import app  # noqa: E402
 import backup  # noqa: E402
+import gentle_reminders  # noqa: E402
 import verify_backup  # noqa: E402
 
 
@@ -110,6 +111,9 @@ class PhotoApiTest(unittest.TestCase):
         self.assertIn("reason", columns)
         self.assertIn("deleted_at", columns)
         self.assertIn("self_pronoun", settings_columns)
+        self.assertIn("gentle_reminders", settings_columns)
+        self.assertIn("last_seen_at", settings_columns)
+        self.assertIn("last_gentle_reminder_at", settings_columns)
         self.assertEqual(old_item[0], "Старая вещь")
         self.assertEqual(old_settings, (14.0, "she"))
         self.assertEqual(draft_table[0], "link_drafts")
@@ -414,6 +418,52 @@ class PhotoApiTest(unittest.TestCase):
         response = self.client.get("/api/health")
         self.assertEqual(response.status_code, 200, response.text)
         self.assertTrue(response.json()["ok"])
+
+    def test_18_gentle_reminders_follow_inactivity_and_user_setting(self):
+        state = self.client.get("/api/state", headers=auth_headers(404))
+        self.assertEqual(state.status_code, 200)
+        self.assertTrue(state.json()["settings"]["gentleReminders"])
+
+        old_seen = int(time.time() * 1000) - 8 * gentle_reminders.DAY
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        conn.execute(
+            "UPDATE settings SET last_seen_at=?, last_gentle_reminder_at=NULL "
+            "WHERE user_id=404",
+            (old_seen,),
+        )
+        conn.commit()
+        due = gentle_reminders.reminder_candidates(conn, int(time.time() * 1000))
+        self.assertIn(404, {row["user_id"] for row in due})
+        conn.close()
+
+        disabled = self.client.put(
+            "/api/settings",
+            headers=auth_headers(404),
+            json={"gentleReminders": False},
+        )
+        self.assertEqual(disabled.status_code, 200)
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        due = gentle_reminders.reminder_candidates(conn, int(time.time() * 1000))
+        self.assertNotIn(404, {row["user_id"] for row in due})
+        conn.close()
+
+        enabled = self.client.put(
+            "/api/settings",
+            headers=auth_headers(404),
+            json={"gentleReminders": True},
+        )
+        self.assertEqual(enabled.status_code, 200)
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT gentle_reminders, last_gentle_reminder_at "
+            "FROM settings WHERE user_id=404"
+        ).fetchone()
+        conn.close()
+        self.assertEqual(row["gentle_reminders"], 1)
+        self.assertIsNotNone(row["last_gentle_reminder_at"])
 
 
 if __name__ == "__main__":

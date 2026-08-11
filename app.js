@@ -16,7 +16,8 @@
     hideWaiting: false,
     archiveAction: 'archive',
     archiveAfterDays: 30,
-    selfPronoun: 'she'
+    selfPronoun: 'she',
+    gentleReminders: true
   };
   let archiveOpen = false;
   let searchQuery = '';
@@ -834,6 +835,8 @@
     $('s-wait').value = String(settings.defaultWaitDays);
     $('s-hideToggle').classList.toggle('on', !settings.hideWaiting);
     $('s-hideToggle').setAttribute('aria-checked', String(!settings.hideWaiting));
+    $('s-gentleToggle').classList.toggle('on', settings.gentleReminders);
+    $('s-gentleToggle').setAttribute('aria-checked', String(settings.gentleReminders));
     $('s-archiveAction').value = settings.archiveAction;
     $('settingsOverlay').classList.add('open');
     $('closeSettings').focus();
@@ -859,6 +862,14 @@
     settings.hideWaiting = !nowOn;
     await saveSettings({ hideWaiting: settings.hideWaiting });
     render();
+  });
+  $('s-gentleToggle').addEventListener('click', async ()=>{
+    const nowOn = !$('s-gentleToggle').classList.contains('on');
+    $('s-gentleToggle').classList.toggle('on', nowOn);
+    $('s-gentleToggle').setAttribute('aria-checked', String(nowOn));
+    settings.gentleReminders = nowOn;
+    await saveSettings({ gentleReminders: nowOn });
+    showToast(nowOn ? 'Тихие напоминания включены' : 'Тихие напоминания выключены');
   });
   $('s-archiveAction').addEventListener('change', async ()=>{
     settings.archiveAction = $('s-archiveAction').value;
@@ -970,7 +981,7 @@
       items = [];
       settings = {
         defaultWaitDays: 7, hideWaiting: false, archiveAction: 'archive',
-        archiveAfterDays: 30, selfPronoun: 'she'
+        archiveAfterDays: 30, selfPronoun: 'she', gentleReminders: true
       };
       $('deleteAccountOverlay').classList.remove('open');
       render();

@@ -133,6 +133,7 @@ class SettingsIn(BaseModel):
     archiveAction: Optional[str] = None
     archiveAfterDays: Optional[float] = None
     selfPronoun: Optional[str] = None
+    gentleReminders: Optional[bool] = None
 
 
 class DeleteAccountIn(BaseModel):
@@ -222,6 +223,7 @@ def settings_to_dict(row):
         "archiveAction": row["archive_action"],
         "archiveAfterDays": row["archive_after_days"],
         "selfPronoun": row["self_pronoun"] or "she",
+        "gentleReminders": bool(row["gentle_reminders"]),
     }
 
 
@@ -264,6 +266,10 @@ def get_state(user_id: int = Depends(get_user_id)):
     conn = get_conn()
     settings_row = load_settings(conn, user_id)
     sweep(conn, user_id, settings_row)
+    conn.execute(
+        "UPDATE settings SET last_seen_at=? WHERE user_id=?", (now_ms(), user_id)
+    )
+    conn.commit()
     items = conn.execute(
         "SELECT * FROM items WHERE user_id=? AND deleted_at IS NULL ORDER BY added_at",
         (user_id,),
@@ -562,6 +568,7 @@ def update_settings(body: SettingsIn, user_id: int = Depends(get_user_id)):
         "archiveAction": "archive_action",
         "archiveAfterDays": "archive_after_days",
         "selfPronoun": "self_pronoun",
+        "gentleReminders": "gentle_reminders",
     }
     data = body.model_dump(exclude_none=True)
     fields, values = [], []
@@ -581,10 +588,13 @@ def update_settings(body: SettingsIn, user_id: int = Depends(get_user_id)):
         ):
             conn.close()
             raise HTTPException(422, "invalid settings time")
-        if col == "hide_waiting":
+        if col in {"hide_waiting", "gentle_reminders"}:
             value = int(value)
         fields.append(f"{col}=?")
         values.append(value)
+        if col == "gentle_reminders" and value:
+            fields.append("last_gentle_reminder_at=?")
+            values.append(now_ms())
     if fields:
         values.append(user_id)
         conn.execute(f"UPDATE settings SET {', '.join(fields)} WHERE user_id=?", values)
