@@ -40,7 +40,11 @@
     padding-bottom:64px;
     -webkit-text-size-adjust:100%;
   }
-  :focus-visible{outline:3px solid var(--waiting);outline-offset:3px;}
+  :focus-visible{outline:none;}
+  html.keyboard-navigation :focus-visible{
+    outline:3px solid var(--waiting);
+    outline-offset:3px;
+  }
 
   .wrap{max-width:560px;margin:0 auto;padding:0 18px;}
 
@@ -468,6 +472,14 @@
   }
   .toast.show{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(-4px);}
   .toast-action{border:0;background:none;color:#D8E0D5;font:700 13px 'Inter',sans-serif;text-decoration:underline;cursor:pointer;padding:0;}
+  @media (max-width:600px){
+    .search-input,
+    .field input:not([type="file"]),
+    .field select,
+    .field textarea{
+      font-size:16px;
+    }
+  }
   @media (prefers-reduced-motion: reduce){
     *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
   }
@@ -949,6 +961,6 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"><span id="toastText"></span><button type="button" class="toast-action" id="toastAction" hidden></button></div>
 
-<script src="app.js?v=20260811-5"></script>
+<script src="app.js?v=20260811-6"></script>
 </body>
 </html>

@@ -108,6 +108,16 @@
   const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
   const initData = tg ? tg.initData : '';
   let stateChannel = null;
+  document.addEventListener('keydown', event=>{
+    if(event.metaKey || event.ctrlKey || event.altKey) return;
+    document.documentElement.classList.add('keyboard-navigation');
+  }, true);
+  document.addEventListener('pointerdown', ()=>{
+    document.documentElement.classList.remove('keyboard-navigation');
+  }, true);
+  document.addEventListener('touchstart', ()=>{
+    document.documentElement.classList.remove('keyboard-navigation');
+  }, { capture: true, passive: true });
   try{
     if(typeof BroadcastChannel === 'function'){
       stateChannel = new BroadcastChannel('berezhok-state');
