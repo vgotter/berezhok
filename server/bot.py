@@ -31,7 +31,7 @@ from product_metadata import (
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 WEBAPP_URL = os.environ.get("WEBAPP_URL", "https://vgotter.github.io/berezhok/")
 CHECK_INTERVAL_SECONDS = int(os.environ.get("CHECK_INTERVAL_SECONDS", "30"))
-OWNER_USERNAME = os.environ.get("OWNER_USERNAME", "psyotter").lstrip("@").lower()
+OWNER_USERNAME = os.environ.get("OWNER_USERNAME", "ironotter").lstrip("@").lower()
 PHOTO_DIR = os.environ.get(
     "PHOTO_DIR", os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), "uploads")
 )
