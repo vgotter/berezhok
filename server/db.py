@@ -46,6 +46,9 @@ def init_db():
     for column, definition in (
         ("reason", "TEXT"),
         ("deleted_at", "INTEGER"),
+        ("need_test_result", "TEXT"),
+        ("need_test_answers", "TEXT"),
+        ("need_test_completed_at", "INTEGER"),
     ):
         if column not in columns:
             try:

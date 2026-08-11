@@ -125,6 +125,10 @@ class SnoozeIn(BaseModel):
     days: float
 
 
+class NeedTestIn(BaseModel):
+    answers: list[int] = Field(min_length=7, max_length=7)
+
+
 class SettingsIn(BaseModel):
     model_config = ConfigDict(allow_inf_nan=False)
 
@@ -153,6 +157,8 @@ def row_to_item(r):
         "decidedAt": r["decided_at"],
         "archived": bool(r["archived"]),
         "hasPhoto": bool(r["photo_filename"]),
+        "needTestResult": r["need_test_result"],
+        "needTestCompletedAt": r["need_test_completed_at"],
     }
 
 
@@ -495,6 +501,38 @@ def snooze_item(item_id: str, body: SnoozeIn, user_id: int = Depends(get_user_id
     conn.commit()
     conn.close()
     return {"ok": True}
+
+
+@app.post("/api/items/{item_id}/need-test")
+def save_need_test(
+    item_id: str, body: NeedTestIn, user_id: int = Depends(get_user_id)
+):
+    if any(answer not in {0, 1, 2} for answer in body.answers):
+        raise HTTPException(422, "invalid test answer")
+    score = sum(body.answers)
+    if score >= 10:
+        result = "needed"
+    elif score <= 5:
+        result = "not_needed"
+    else:
+        result = "unclear"
+    completed_at = now_ms()
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT id FROM items WHERE id=? AND user_id=? AND deleted_at IS NULL",
+        (item_id, user_id),
+    ).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(404, "not found")
+    conn.execute(
+        "UPDATE items SET need_test_result=?, need_test_answers=?, "
+        "need_test_completed_at=? WHERE id=? AND user_id=?",
+        (result, json.dumps(body.answers), completed_at, item_id, user_id),
+    )
+    conn.commit()
+    conn.close()
+    return {"result": result, "completedAt": completed_at}
 
 
 @app.post("/api/items/{item_id}/undo")

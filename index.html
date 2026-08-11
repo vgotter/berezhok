@@ -284,6 +284,35 @@
   }
   .detail-photo img{width:100%;height:100%;object-fit:contain;background:#DCD5C4;}
   .detail-status{font-size:11px;color:var(--ink-soft);margin:-8px 0 14px;}
+  .need-test-entry{
+    margin-top:14px;padding:14px;border:1px solid #C9D4C6;border-radius:13px;
+    background:var(--waiting-soft);
+  }
+  .need-test-entry-title{font-size:13.5px;font-weight:650;}
+  .need-test-entry-copy{font-size:11.5px;line-height:1.45;color:var(--ink-soft);margin:4px 0 11px;}
+  .need-test-entry .btn{width:100%;background:var(--paper-raised);}
+  .quiz-progress-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:9px;}
+  .quiz-progress-label{font:11px 'IBM Plex Mono',monospace;color:var(--ink-soft);}
+  .quiz-item-name{font-size:11.5px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%;}
+  .quiz-progress{height:6px;border-radius:100px;background:var(--line);overflow:hidden;margin-bottom:20px;}
+  .quiz-progress-fill{height:100%;border-radius:inherit;background:var(--waiting);transition:width .18s ease;}
+  .quiz-question{font-family:'Fraunces',serif;font-size:21px;line-height:1.25;margin-bottom:18px;}
+  .quiz-options{display:grid;gap:9px;}
+  .quiz-option{
+    width:100%;min-height:52px;border:1px solid var(--line);border-radius:12px;
+    background:var(--paper-raised);padding:12px 14px;text-align:left;
+    color:var(--ink);font:550 13.5px/1.35 'Inter',sans-serif;cursor:pointer;
+  }
+  .quiz-option.selected{border-color:var(--waiting);background:var(--waiting-soft);}
+  .quiz-back{margin-top:13px;border:0;background:none;color:var(--ink-soft);font:600 12.5px 'Inter',sans-serif;cursor:pointer;padding:8px 0;}
+  .quiz-result{text-align:center;padding:8px 0 2px;}
+  .quiz-result[hidden],.quiz-question-view[hidden]{display:none;}
+  .quiz-result-icon{font-size:36px;margin-bottom:9px;}
+  .quiz-result-title{font-family:'Fraunces',serif;font-size:24px;line-height:1.2;margin-bottom:11px;}
+  .quiz-result-copy{font-size:13px;line-height:1.55;color:var(--ink-soft);margin:0 auto 19px;max-width:430px;}
+  .quiz-result-actions{display:grid;gap:9px;}
+  .quiz-result-actions .submit-btn{margin-top:0;}
+  .quiz-result-actions .btn{width:100%;min-height:44px;}
   .detail-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;}
   .detail-actions .btn{width:100%;}
   .detail-actions .wide{grid-column:1/-1;}
@@ -564,6 +593,11 @@
       </div>
       <button type="submit" class="submit-btn">Сохранить изменения</button>
     </form>
+    <div class="need-test-entry" id="needTestEntry">
+      <div class="need-test-entry-title">Мне действительно это нужно?</div>
+      <div class="need-test-entry-copy" id="needTestSummary">Семь спокойных вопросов, чтобы свериться с собой.</div>
+      <button class="btn" type="button" id="openNeedTest">Пройти короткий тест</button>
+    </div>
     <div class="detail-actions" id="detailActions">
       <button class="btn bought" type="button" data-detail-action="bought"></button>
       <button class="btn drop" type="button" data-detail-action="drop">Уже не надо</button>
@@ -572,6 +606,35 @@
     </div>
     <button type="button" class="submit-btn" id="restoreItem" hidden>Вернуть на подумать</button>
     <button type="button" class="danger-btn" id="deleteItem">Удалить вещь</button>
+  </div>
+</div>
+
+<!-- Need test sheet -->
+<div class="overlay" id="needTestOverlay">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="needTestTitle">
+    <div class="sheet-head">
+      <span class="sheet-title" id="needTestTitle">Мне действительно это нужно?</span>
+      <button class="close-x" id="closeNeedTest" aria-label="Закрыть тест"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div class="quiz-question-view" id="needTestQuestionView">
+      <div class="quiz-progress-row">
+        <span class="quiz-progress-label" id="needTestProgressLabel">Вопрос 1 из 7</span>
+        <span class="quiz-item-name" id="needTestItemName"></span>
+      </div>
+      <div class="quiz-progress" aria-hidden="true"><div class="quiz-progress-fill" id="needTestProgressFill"></div></div>
+      <div class="quiz-question" id="needTestQuestion"></div>
+      <div class="quiz-options" id="needTestOptions"></div>
+      <button class="quiz-back" type="button" id="needTestBack" hidden>← Назад</button>
+    </div>
+    <div class="quiz-result" id="needTestResult" hidden>
+      <div class="quiz-result-icon" id="needTestResultIcon" aria-hidden="true"></div>
+      <div class="quiz-result-title" id="needTestResultTitle"></div>
+      <p class="quiz-result-copy" id="needTestResultCopy"></p>
+      <div class="quiz-result-actions">
+        <button type="button" class="submit-btn" id="needTestPrimaryAction"></button>
+        <button type="button" class="btn" id="needTestReturn">Вернуться к карточке</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -767,6 +830,6 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"><span id="toastText"></span><button type="button" class="toast-action" id="toastAction" hidden></button></div>
 
-<script src="app.js?v=20260811-1"></script>
+<script src="app.js?v=20260811-2"></script>
 </body>
 </html>

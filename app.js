@@ -9,6 +9,55 @@
     ['сум','сум узбекский'], ['дин','дин сербский'], ['AED','AED дирхам'],
     ['Br','Br бел. рубль'], ['¥','¥ юань']
   ];
+  const NEED_TEST_QUESTIONS = [
+    {
+      question: 'Какую конкретную проблему решит эта вещь?',
+      options: [['Понятную и регулярную', 2], ['Просто сделает жизнь приятнее', 1], ['Пока не могу объяснить', 0]]
+    },
+    {
+      question: 'Есть ли у тебя что-то, что уже выполняет ту же задачу?',
+      options: [['Нет', 2], ['Есть, но не справляется', 1], ['Есть и в целом работает', 0]]
+    },
+    {
+      question: 'Как часто ты действительно будешь этим пользоваться?',
+      options: [['Каждую неделю или чаще', 2], ['Время от времени', 1], ['Пока не представляю', 0]]
+    },
+    {
+      question: ()=>say('Ты хотела эту вещь до того, как увидела рекламу, скидку или её у кого-то?', 'Ты хотел эту вещь до того, как увидел рекламу, скидку или её у кого-то?'),
+      options: [['Да, это желание появилось раньше', 2], ['Думала о чём-то похожем', 1], ['Нет, желание появилось только сейчас', 0]],
+      masculineOptions: [['Да, это желание появилось раньше', 2], ['Думал о чём-то похожем', 1], ['Нет, желание появилось только сейчас', 0]]
+    },
+    {
+      question: 'Что произойдёт, если её не купить?',
+      options: [['Останется реальная проблема', 2], ['Будет немного неудобно', 1], ['В общем-то ничего', 0]]
+    },
+    {
+      question: 'Покупка спокойно помещается в бюджет?',
+      options: [['Да, без ущерба важному', 2], ['Придётся отложить другую цель', 1], ['Только в долг или за счёт необходимого', 0]]
+    },
+    {
+      question: 'Представь, что эту вещь никто никогда не увидит. Тебе всё равно хочется её купить?',
+      options: [['Да', 2], ['Не уверена', 1], ['Уже заметно меньше', 0]],
+      masculineOptions: [['Да', 2], ['Не уверен', 1], ['Уже заметно меньше', 0]]
+    }
+  ];
+  const NEED_TEST_RESULTS = {
+    needed: {
+      icon: '🌿', title: 'Похоже, она тебе нужна',
+      copy: 'По твоим ответам у этой покупки достаточно весомых оснований. Похоже, она действительно может быть тебе нужна — но окончательное решение, конечно, за тобой.',
+      action: 'Вернуться к карточке'
+    },
+    not_needed: {
+      icon: '🍃', title: 'Похоже, сейчас можно обойтись без неё',
+      copy: 'По твоим ответам сейчас не нашлось достаточно весомых причин для покупки. Возможно, её можно спокойно отпустить или вернуться к ней позже, если желание останется.',
+      action: 'Уже не надо'
+    },
+    unclear: {
+      icon: '🌱', title: 'Пока непонятно',
+      copy: 'Ответы пока не складываются в уверенное «да» или «нет». Похоже, лучше ничего не решать прямо сейчас и дать вещи ещё немного времени.',
+      action: 'Подождать ещё неделю'
+    }
+  };
 
   let items = [];
   let settings = {
@@ -28,6 +77,11 @@
   let detailPreviewObjectUrl = null;
   let detailRemovePhoto = false;
   let pendingSnoozeId = null;
+  let needTestItemId = null;
+  let needTestStep = 0;
+  let needTestAnswers = [];
+  let activeNeedTestResult = null;
+  let needTestSaving = false;
   let refreshPromise = null;
   let lastRefreshAt = 0;
   const photoObjectUrls = new Map();
@@ -177,6 +231,12 @@
   function snoozeOnServer(id, days){
     return api(`/api/items/${id}/snooze`, {
       method: 'POST', body: JSON.stringify({ days })
+    });
+  }
+
+  function saveNeedTestOnServer(id, answers){
+    return api(`/api/items/${id}/need-test`, {
+      method: 'POST', body: JSON.stringify({ answers })
     });
   }
 
@@ -541,6 +601,18 @@
     $('detailPhotoRemove').hidden = !detailSelectedPhoto && (detailRemovePhoto || !item.hasPhoto);
   }
 
+  function renderNeedTestEntry(item){
+    const summaries = {
+      needed: 'Последний результат: похоже, она тебе нужна.',
+      not_needed: 'Последний результат: похоже, сейчас можно обойтись без неё.',
+      unclear: 'Последний результат: пока непонятно.'
+    };
+    $('needTestSummary').textContent = summaries[item.needTestResult]
+      || 'Семь спокойных вопросов, чтобы свериться с собой.';
+    $('openNeedTest').textContent = item.needTestResult
+      ? 'Пройти ещё раз' : 'Пройти короткий тест';
+  }
+
   function openDetail(id){
     const item = items.find(candidate=>candidate.id === id);
     if(!item) return;
@@ -570,6 +642,7 @@
     $('restoreItem').hidden = !archived;
     document.querySelector('[data-detail-action="bought"]').textContent = say('Купила','Купил');
     renderDetailPhoto(item);
+    renderNeedTestEntry(item);
     $('detailOverlay').classList.add('open');
   }
 
@@ -579,6 +652,101 @@
     detailPreviewObjectUrl = null;
     detailSelectedPhoto = null;
     detailItemId = null;
+  }
+
+  function questionOptions(question){
+    return settings.selfPronoun === 'he' && question.masculineOptions
+      ? question.masculineOptions : question.options;
+  }
+
+  function renderNeedTestQuestion(){
+    const question = NEED_TEST_QUESTIONS[needTestStep];
+    $('needTestQuestionView').hidden = false;
+    $('needTestResult').hidden = true;
+    $('needTestProgressLabel').textContent = `Вопрос ${needTestStep + 1} из ${NEED_TEST_QUESTIONS.length}`;
+    $('needTestProgressFill').style.width = `${((needTestStep + 1) / NEED_TEST_QUESTIONS.length) * 100}%`;
+    $('needTestQuestion').textContent = typeof question.question === 'function'
+      ? question.question() : question.question;
+    $('needTestOptions').innerHTML = '';
+    questionOptions(question).forEach(([label, score])=>{
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'quiz-option';
+      if(needTestAnswers[needTestStep] === score) button.classList.add('selected');
+      button.textContent = label;
+      button.addEventListener('click', async ()=>{
+        if(needTestSaving) return;
+        needTestAnswers[needTestStep] = score;
+        if(needTestStep < NEED_TEST_QUESTIONS.length - 1){
+          needTestStep += 1;
+          renderNeedTestQuestion();
+        }else{
+          await finishNeedTest();
+        }
+      });
+      $('needTestOptions').appendChild(button);
+    });
+    $('needTestBack').hidden = needTestStep === 0;
+    requestAnimationFrame(()=>{
+      const first = $('needTestOptions').querySelector('.quiz-option');
+      if(first) first.focus();
+    });
+  }
+
+  function openNeedTest(){
+    const item = items.find(candidate=>candidate.id === detailItemId);
+    if(!item) return;
+    needTestItemId = item.id;
+    needTestStep = 0;
+    needTestAnswers = [];
+    activeNeedTestResult = null;
+    needTestSaving = false;
+    $('needTestItemName').textContent = item.name;
+    $('needTestOverlay').classList.add('open');
+    renderNeedTestQuestion();
+  }
+
+  function closeNeedTest(returnFocus = true){
+    $('needTestOverlay').classList.remove('open');
+    needTestSaving = false;
+    needTestItemId = null;
+    needTestStep = 0;
+    needTestAnswers = [];
+    activeNeedTestResult = null;
+    if(returnFocus && $('detailOverlay').classList.contains('open')) $('openNeedTest').focus();
+  }
+
+  function renderNeedTestResult(result){
+    const meta = NEED_TEST_RESULTS[result];
+    activeNeedTestResult = result;
+    $('needTestQuestionView').hidden = true;
+    $('needTestResult').hidden = false;
+    $('needTestResultIcon').textContent = meta.icon;
+    $('needTestResultTitle').textContent = meta.title;
+    $('needTestResultCopy').textContent = meta.copy;
+    $('needTestPrimaryAction').textContent = meta.action;
+    $('needTestReturn').hidden = result === 'needed';
+    $('needTestPrimaryAction').focus();
+  }
+
+  async function finishNeedTest(){
+    if(!needTestItemId || needTestAnswers.length !== NEED_TEST_QUESTIONS.length) return;
+    needTestSaving = true;
+    Array.from($('needTestOptions').children).forEach(button=>button.disabled = true);
+    try{
+      const saved = await saveNeedTestOnServer(needTestItemId, needTestAnswers);
+      const item = items.find(candidate=>candidate.id === needTestItemId);
+      if(item){
+        item.needTestResult = saved.result;
+        item.needTestCompletedAt = saved.completedAt;
+        renderNeedTestEntry(item);
+      }
+      renderNeedTestResult(saved.result);
+    }catch(error){
+      needTestSaving = false;
+      renderNeedTestQuestion();
+      showToast('Не получилось сохранить результат теста');
+    }
   }
 
   function buildPrice(amount, currency){
@@ -715,6 +883,45 @@
   $('closeDetail').addEventListener('click', closeDetail);
   $('detailOverlay').addEventListener('click', event=>{
     if(event.target.id === 'detailOverlay') closeDetail();
+  });
+  $('openNeedTest').addEventListener('click', openNeedTest);
+  $('closeNeedTest').addEventListener('click', ()=>closeNeedTest());
+  $('needTestOverlay').addEventListener('click', event=>{
+    if(event.target.id === 'needTestOverlay') closeNeedTest();
+  });
+  $('needTestBack').addEventListener('click', ()=>{
+    if(needTestStep === 0 || needTestSaving) return;
+    needTestStep -= 1;
+    renderNeedTestQuestion();
+  });
+  $('needTestReturn').addEventListener('click', ()=>closeNeedTest());
+  $('needTestPrimaryAction').addEventListener('click', async ()=>{
+    const id = needTestItemId;
+    const result = activeNeedTestResult;
+    if(!id || !result) return;
+    if(result === 'needed') return closeNeedTest();
+    const button = $('needTestPrimaryAction');
+    button.disabled = true;
+    try{
+      if(result === 'not_needed'){
+        await decideOnServer(id, 'drop');
+        closeNeedTest(false);
+        closeDetail();
+        await loadData();
+        render();
+        showToast(say('Убрала вещь','Убрал вещь'), 'Отменить', ()=>undoLastAction(id));
+      }else{
+        await snoozeOnServer(id, 7);
+        closeNeedTest(false);
+        closeDetail();
+        await loadData();
+        render();
+        showToast('Вернёмся к этому через неделю');
+      }
+    }catch(error){
+      button.disabled = false;
+      showToast('Не получилось сохранить действие');
+    }
   });
   $('d-photo').addEventListener('change', ()=>{
     const file = $('d-photo').files && $('d-photo').files[0];
@@ -963,6 +1170,7 @@
     if($('deleteAccountOverlay').classList.contains('open')) closeDeleteAccount();
     else if($('privacyOverlay').classList.contains('open')) closeInfoOverlay('privacyOverlay', 'openPrivacy');
     else if($('helpOverlay').classList.contains('open')) closeHelp();
+    else if($('needTestOverlay').classList.contains('open')) closeNeedTest();
     else if($('snoozeOverlay').classList.contains('open')) closeSnooze();
     else if($('detailOverlay').classList.contains('open')) closeDetail();
     else if($('addOverlay').classList.contains('open')) closeAdd();

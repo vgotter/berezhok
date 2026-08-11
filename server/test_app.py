@@ -110,6 +110,9 @@ class PhotoApiTest(unittest.TestCase):
         self.assertIn("photo_filename", columns)
         self.assertIn("reason", columns)
         self.assertIn("deleted_at", columns)
+        self.assertIn("need_test_result", columns)
+        self.assertIn("need_test_answers", columns)
+        self.assertIn("need_test_completed_at", columns)
         self.assertIn("self_pronoun", settings_columns)
         self.assertIn("gentle_reminders", settings_columns)
         self.assertIn("last_seen_at", settings_columns)
@@ -464,6 +467,48 @@ class PhotoApiTest(unittest.TestCase):
         conn.close()
         self.assertEqual(row["gentle_reminders"], 1)
         self.assertIsNotNone(row["last_gentle_reminder_at"])
+
+    def test_19_need_test_is_scored_saved_and_owner_scoped(self):
+        item_id = self.client.post(
+            "/api/items",
+            headers=auth_headers(505),
+            json={"name": "Тестируемая вещь"},
+        ).json()["id"]
+        invalid = self.client.post(
+            f"/api/items/{item_id}/need-test",
+            headers=auth_headers(505),
+            json={"answers": [2, 2]},
+        )
+        denied = self.client.post(
+            f"/api/items/{item_id}/need-test",
+            headers=auth_headers(606),
+            json={"answers": [2, 2, 2, 2, 2, 2, 2]},
+        )
+        saved = self.client.post(
+            f"/api/items/{item_id}/need-test",
+            headers=auth_headers(505),
+            json={"answers": [2, 2, 2, 2, 2, 2, 2]},
+        )
+        self.assertEqual(invalid.status_code, 422)
+        self.assertEqual(denied.status_code, 404)
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.json()["result"], "needed")
+        not_needed = self.client.post(
+            f"/api/items/{item_id}/need-test",
+            headers=auth_headers(505),
+            json={"answers": [0, 0, 0, 0, 0, 0, 0]},
+        )
+        unclear = self.client.post(
+            f"/api/items/{item_id}/need-test",
+            headers=auth_headers(505),
+            json={"answers": [1, 1, 1, 1, 1, 1, 1]},
+        )
+        self.assertEqual(not_needed.json()["result"], "not_needed")
+        self.assertEqual(unclear.json()["result"], "unclear")
+        state = self.client.get("/api/state", headers=auth_headers(505)).json()
+        item = next(entry for entry in state["items"] if entry["id"] == item_id)
+        self.assertEqual(item["needTestResult"], "unclear")
+        self.assertIsNotNone(item["needTestCompletedAt"])
 
 
 if __name__ == "__main__":
