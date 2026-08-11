@@ -81,6 +81,7 @@
     selfPronoun: 'she',
     gentleReminders: true
   };
+  let featureFlags = { testWaits: false };
   let archiveOpen = false;
   let searchQuery = '';
   let selectedPhoto = null;
@@ -119,6 +120,28 @@
 
   function say(feminine, masculine){
     return settings.selfPronoun === 'he' ? masculine : feminine;
+  }
+
+  function applyFeatureVisibility(){
+    const showTestWaits = Boolean(featureFlags.testWaits);
+    document.querySelectorAll('[data-owner-test-wait]').forEach(element=>{
+      element.hidden = !showTestWaits;
+      element.disabled = !showTestWaits;
+    });
+  }
+
+  function setWaitSelectValue(select, value){
+    select.querySelectorAll('[data-current-wait]').forEach(option=>option.remove());
+    const normalized = String(value);
+    const available = Array.from(select.options).some(option=>
+      option.value === normalized && !option.disabled
+    );
+    if(!available){
+      const custom = new Option(`${fmtWaitDays(Number(value))} (текущий срок)`, normalized);
+      custom.dataset.currentWait = 'true';
+      select.add(custom);
+    }
+    select.value = normalized;
   }
 
   function showToast(message, actionText, actionHandler, duration){
@@ -161,6 +184,8 @@
       const state = await api('/api/state');
       items = state.items;
       settings = Object.assign(settings, state.settings);
+      featureFlags = Object.assign(featureFlags, state.features || {});
+      applyFeatureVisibility();
       // Карточки должны появиться сразу после получения состояния. Медленная
       // или зависшая загрузка одной фотографии не должна скрывать весь список.
       loadPhotoUrls().then(render).catch(()=>{});
@@ -645,14 +670,8 @@
     const parsed = parsePrice(item.price);
     $('d-price').value = parsed ? parsed.amount : '';
     $('d-currency').value = parsed ? parsed.currency : '₽';
-    $('d-wait').querySelectorAll('[data-custom-wait]').forEach(option=>option.remove());
     const waitValue = item.waitDays == null ? 'default' : String(item.waitDays);
-    if(!Array.from($('d-wait').options).some(option=>option.value === waitValue)){
-      const custom = new Option(`${item.waitDays} дн. (текущий срок)`, waitValue);
-      custom.dataset.customWait = 'true';
-      $('d-wait').add(custom);
-    }
-    $('d-wait').value = waitValue;
+    setWaitSelectValue($('d-wait'), waitValue);
     $('detailStatus').textContent = statusText(item);
     const archived = itemStatus(item) === 'archived';
     $('detailActions').style.display = itemStatus(item) === 'ready' ? 'grid' : 'none';
@@ -1276,7 +1295,7 @@
 
   $('settingsBtn').addEventListener('click', ()=>{
     $('s-pronoun').value = settings.selfPronoun;
-    $('s-wait').value = String(settings.defaultWaitDays);
+    setWaitSelectValue($('s-wait'), settings.defaultWaitDays);
     $('s-hideToggle').classList.toggle('on', !settings.hideWaiting);
     $('s-hideToggle').setAttribute('aria-checked', String(!settings.hideWaiting));
     $('s-gentleToggle').classList.toggle('on', settings.gentleReminders);
@@ -1455,6 +1474,7 @@
 
   (async function init(){
     $('appVersion').textContent = APP_VERSION;
+    applyFeatureVisibility();
     $('d-currency').innerHTML = CURRENCIES.map(([value,label])=>`<option value="${escAttr(value)}">${escHTML(label)}</option>`).join('');
     if(tg){
       tg.ready();

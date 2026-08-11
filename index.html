@@ -648,8 +648,8 @@
         <label for="f-wait">Подождать сколько</label>
         <select id="f-wait">
           <option value="default">Как обычно (настройки)</option>
-          <option value="0.0034722222">5 минут (для теста)</option>
-          <option value="0.0417">Час (для теста)</option>
+          <option value="0.0034722222" data-owner-test-wait hidden disabled>5 минут (для теста)</option>
+          <option value="0.0417" data-owner-test-wait hidden disabled>Час (для теста)</option>
           <option value="3">3 дня</option>
           <option value="7">Неделю</option>
           <option value="14">Две недели</option>
@@ -702,8 +702,8 @@
         <label for="d-wait">Срок ожидания</label>
         <select id="d-wait">
           <option value="default">Как обычно (настройки)</option>
-          <option value="0.0034722222">5 минут (для теста)</option>
-          <option value="0.0417">Час (для теста)</option>
+          <option value="0.0034722222" data-owner-test-wait hidden disabled>5 минут (для теста)</option>
+          <option value="0.0417" data-owner-test-wait hidden disabled>Час (для теста)</option>
           <option value="3">3 дня</option>
           <option value="7">Неделю</option>
           <option value="14">Две недели</option>
@@ -765,7 +765,7 @@
       <button class="close-x" id="closeSnooze" aria-label="Закрыть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
     <div class="snooze-options">
-      <button class="snooze-option" data-snooze-days="0.0034722222">5 минут</button>
+      <button class="snooze-option" data-snooze-days="0.0034722222" data-owner-test-wait hidden disabled>5 минут</button>
       <button class="snooze-option" data-snooze-days="3">3 дня</button>
       <button class="snooze-option" data-snooze-days="7">Неделю</button>
       <button class="snooze-option" data-snooze-days="14">Две недели</button>
@@ -793,8 +793,8 @@
     <div class="field">
       <label for="s-wait">Сколько ждать по умолчанию</label>
       <select id="s-wait">
-        <option value="0.0034722222">5 минут (для теста)</option>
-        <option value="0.0417">Час (для теста)</option>
+        <option value="0.0034722222" data-owner-test-wait hidden disabled>5 минут (для теста)</option>
+        <option value="0.0417" data-owner-test-wait hidden disabled>Час (для теста)</option>
         <option value="3">3 дня</option>
         <option value="7">Неделю</option>
         <option value="14">Две недели</option>
@@ -949,6 +949,6 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"><span id="toastText"></span><button type="button" class="toast-action" id="toastAction" hidden></button></div>
 
-<script src="app.js?v=20260811-4"></script>
+<script src="app.js?v=20260811-5"></script>
 </body>
 </html>

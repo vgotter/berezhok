@@ -74,11 +74,14 @@ import gentle_reminders  # noqa: E402
 import verify_backup  # noqa: E402
 
 
-def auth_headers(user_id, auth_date=None):
+def auth_headers(user_id, auth_date=None, username=None):
+    user = {"id": user_id}
+    if username:
+        user["username"] = username
     fields = {
         "auth_date": str(auth_date or int(time.time())),
         "query_id": f"query-{user_id}",
-        "user": json.dumps({"id": user_id}, separators=(",", ":")),
+        "user": json.dumps(user, separators=(",", ":")),
     }
     check = "\n".join(f"{key}={value}" for key, value in sorted(fields.items()))
     secret = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
@@ -126,6 +129,16 @@ class PhotoApiTest(unittest.TestCase):
         ).fetchone()
         conn.close()
         self.assertEqual(config_table[0], "app_config")
+
+    def test_01b_test_waits_are_visible_only_to_owner(self):
+        regular = self.client.get(
+            "/api/state", headers=auth_headers(707, username="someone_else")
+        )
+        owner = self.client.get(
+            "/api/state", headers=auth_headers(708, username="IronOtter")
+        )
+        self.assertFalse(regular.json()["features"]["testWaits"])
+        self.assertTrue(owner.json()["features"]["testWaits"])
 
     def test_02_existing_json_endpoint_still_works(self):
         response = self.client.post(

@@ -23,6 +23,7 @@ from db import DB_PATH, get_conn, init_db, new_id, now_ms
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "https://vgotter.github.io")
+OWNER_USERNAME = os.environ.get("OWNER_USERNAME", "ironotter").lstrip("@").lower()
 AUTH_MAX_AGE_SECONDS = int(os.environ.get("AUTH_MAX_AGE_SECONDS", "86400"))
 RATE_LIMIT_PER_MINUTE = int(os.environ.get("RATE_LIMIT_PER_MINUTE", "240"))
 BOT_HEARTBEAT_MAX_AGE_SECONDS = int(
@@ -101,10 +102,14 @@ def enforce_rate_limit(user_id: int) -> None:
         timestamps.append(now)
 
 
-def get_user_id(x_telegram_init_data: str = Header(...)) -> int:
-    user_id = check_init_data(x_telegram_init_data)["id"]
-    enforce_rate_limit(user_id)
-    return user_id
+def get_user(x_telegram_init_data: str = Header(...)) -> dict:
+    user = check_init_data(x_telegram_init_data)
+    enforce_rate_limit(user["id"])
+    return user
+
+
+def get_user_id(user: dict = Depends(get_user)) -> int:
+    return user["id"]
 
 
 class ItemIn(BaseModel):
@@ -268,7 +273,8 @@ def sweep(conn, user_id, settings_row):
 
 
 @app.get("/api/state")
-def get_state(user_id: int = Depends(get_user_id)):
+def get_state(user: dict = Depends(get_user)):
+    user_id = user["id"]
     conn = get_conn()
     settings_row = load_settings(conn, user_id)
     sweep(conn, user_id, settings_row)
@@ -284,6 +290,9 @@ def get_state(user_id: int = Depends(get_user_id)):
     return {
         "items": [row_to_item(r) for r in items],
         "settings": settings_to_dict(settings_row),
+        "features": {
+            "testWaits": (user.get("username") or "").lower() == OWNER_USERNAME,
+        },
     }
 
 
