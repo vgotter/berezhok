@@ -82,9 +82,24 @@
     font-size:15px;
     cursor:pointer;
     display:flex;align-items:center;justify-content:center;gap:8px;
-    margin-bottom:26px;
+    margin-bottom:10px;
   }
   .add-btn:active{opacity:0.85;}
+  .sos-btn{
+    width:100%;display:flex;align-items:center;gap:11px;margin:0 0 26px;
+    padding:11px 13px;border:1px solid #D5BFC6;border-radius:14px;
+    background:var(--ready-soft);color:var(--ink);text-align:left;cursor:pointer;
+    font-family:'Inter',sans-serif;
+  }
+  .sos-mark{
+    width:42px;height:42px;border-radius:11px;background:var(--ready);color:#fff;
+    display:flex;align-items:center;justify-content:center;flex:none;
+    font:700 12px 'IBM Plex Mono',monospace;letter-spacing:.04em;
+  }
+  .sos-btn-copy{flex:1;min-width:0;}
+  .sos-btn-title{display:block;font-size:13.5px;font-weight:650;}
+  .sos-btn-sub{display:block;margin-top:2px;font-size:11.5px;color:var(--ink-soft);}
+  .sos-arrow{font-size:20px;color:var(--ready);flex:none;}
 
   .effect{
     display:none;background:var(--waiting-soft);border:1px solid #C9D4C6;
@@ -313,6 +328,53 @@
   .quiz-result-actions{display:grid;gap:9px;}
   .quiz-result-actions .submit-btn{margin-top:0;}
   .quiz-result-actions .btn{width:100%;min-height:44px;}
+  .sos-intro{font-size:13.5px;line-height:1.55;color:var(--ink-soft);margin:-5px 0 16px;}
+  .sos-techniques{display:grid;gap:9px;}
+  .sos-technique{
+    width:100%;display:flex;align-items:center;gap:12px;min-height:66px;
+    border:1px solid var(--line);border-radius:13px;background:var(--paper-raised);
+    padding:11px 13px;color:var(--ink);text-align:left;cursor:pointer;
+    font-family:'Inter',sans-serif;
+  }
+  .sos-technique-icon{font-size:24px;width:34px;text-align:center;flex:none;}
+  .sos-technique-copy{flex:1;}
+  .sos-technique-title{display:block;font-size:13.5px;font-weight:650;}
+  .sos-technique-sub{display:block;font-size:11.5px;line-height:1.35;color:var(--ink-soft);margin-top:2px;}
+  .sos-technique-arrow{font-size:20px;color:var(--ready);}
+  .sos-back{border:0;background:none;color:var(--ink-soft);font:600 12.5px 'Inter',sans-serif;cursor:pointer;padding:0 0 12px;}
+  .sos-technique-heading{font-family:'Fraunces',serif;font-size:23px;line-height:1.2;text-align:center;margin:2px 0 7px;}
+  .sos-technique-lead{font-size:12.5px;line-height:1.5;color:var(--ink-soft);text-align:center;margin:0 auto 18px;max-width:420px;}
+  .sos-footer{display:grid;gap:8px;margin-top:18px;padding-top:15px;border-top:1px solid var(--line);}
+  .sos-footer .submit-btn{margin:0;background:var(--waiting);}
+  .sos-footer .btn{width:100%;min-height:44px;}
+  .breathing-wrap{text-align:center;}
+  .breathing-square{
+    width:170px;height:170px;margin:22px auto 18px;border:2px solid #C8B1BA;
+    border-radius:18px;position:relative;background:var(--ready-soft);
+  }
+  .breath-dot{
+    width:18px;height:18px;border-radius:50%;background:var(--ready);
+    position:absolute;left:-10px;top:-10px;transition:left 4s linear,top 4s linear;
+    box-shadow:0 2px 7px rgba(42,40,34,.16);
+  }
+  .breathing-square.phase-0 .breath-dot{left:calc(100% - 8px);top:-10px;}
+  .breathing-square.phase-1 .breath-dot{left:calc(100% - 8px);top:calc(100% - 8px);}
+  .breathing-square.phase-2 .breath-dot{left:-10px;top:calc(100% - 8px);}
+  .breathing-square.phase-3 .breath-dot{left:-10px;top:-10px;}
+  .breath-stage{font-family:'Fraunces',serif;font-size:25px;line-height:1.1;min-height:29px;}
+  .breath-meta{font:11px 'IBM Plex Mono',monospace;color:var(--ink-soft);margin:6px 0 15px;}
+  .sos-main-action{min-width:190px;border:0;border-radius:12px;background:var(--ready);color:#fff;padding:12px 18px;font:650 14px 'Inter',sans-serif;cursor:pointer;}
+  .grounding-progress{height:6px;background:var(--line);border-radius:100px;overflow:hidden;margin:2px 0 20px;}
+  .grounding-progress-fill{height:100%;background:var(--waiting);border-radius:inherit;transition:width .18s ease;}
+  .grounding-count{font-family:'Fraunces',serif;font-size:64px;line-height:1;text-align:center;color:var(--waiting);}
+  .grounding-prompt{font-size:16px;line-height:1.45;text-align:center;margin:11px auto 21px;max-width:400px;}
+  .grounding-action{display:block;margin:0 auto;}
+  .pause-clock{font:500 44px 'IBM Plex Mono',monospace;text-align:center;color:var(--ready);margin:24px 0 7px;}
+  .pause-note{text-align:center;color:var(--ink-soft);font-size:12px;line-height:1.45;margin:0 0 20px;}
+  .sos-complete{padding:22px 12px;text-align:center;background:var(--waiting-soft);border-radius:14px;}
+  .sos-complete-icon{font-size:34px;margin-bottom:8px;}
+  .sos-complete-title{font-family:'Fraunces',serif;font-size:21px;margin-bottom:6px;}
+  .sos-complete-copy{font-size:12.5px;line-height:1.5;color:var(--ink-soft);}
   .detail-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;}
   .detail-actions .btn{width:100%;}
   .detail-actions .wide{grid-column:1/-1;}
@@ -422,6 +484,15 @@
       Добавить вещь
     </button>
 
+    <button class="sos-btn" id="sosBtn" type="button">
+      <span class="sos-mark">SOS</span>
+      <span class="sos-btn-copy">
+        <span class="sos-btn-title">Хочется купить прямо сейчас?</span>
+        <span class="sos-btn-sub">Небольшая пауза перед импульсивной покупкой</span>
+      </span>
+      <span class="sos-arrow" aria-hidden="true">›</span>
+    </button>
+
     <div class="effect" id="effectCard">
       <div class="effect-title" id="effectTitle"></div>
       <div class="effect-text" id="effectText"></div>
@@ -462,6 +533,44 @@
       <div id="archiveList" style="display:none;"></div>
     </div>
   </main>
+</div>
+
+<!-- SOS sheet -->
+<div class="overlay" id="sosOverlay">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sosTitle">
+    <div class="sheet-head">
+      <span class="sheet-title" id="sosTitle">SOS от импульсивной покупки</span>
+      <button class="close-x" id="closeSos" aria-label="Закрыть SOS"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div id="sosMenu">
+      <p class="sos-intro">Ничего не запрещаем и ничего не решаем прямо сейчас. Выбери короткую технику, а Бережок побудет рядом.</p>
+      <div class="sos-techniques">
+        <button class="sos-technique" type="button" data-sos-technique="breathing">
+          <span class="sos-technique-icon" aria-hidden="true">◻️</span>
+          <span class="sos-technique-copy"><span class="sos-technique-title">Квадратное дыхание</span><span class="sos-technique-sub">Четыре спокойных цикла по четыре секунды</span></span>
+          <span class="sos-technique-arrow" aria-hidden="true">›</span>
+        </button>
+        <button class="sos-technique" type="button" data-sos-technique="grounding">
+          <span class="sos-technique-icon" aria-hidden="true">👀</span>
+          <span class="sos-technique-copy"><span class="sos-technique-title">Вернуться в комнату</span><span class="sos-technique-sub">Техника 5–4–3–2–1 через органы чувств</span></span>
+          <span class="sos-technique-arrow" aria-hidden="true">›</span>
+        </button>
+        <button class="sos-technique" type="button" data-sos-technique="pause">
+          <span class="sos-technique-icon" aria-hidden="true">⏳</span>
+          <span class="sos-technique-copy"><span class="sos-technique-title">Пауза на 10 минут</span><span class="sos-technique-sub">Закрыть магазин и вернуться к решению чуть позже</span></span>
+          <span class="sos-technique-arrow" aria-hidden="true">›</span>
+        </button>
+      </div>
+    </div>
+    <div id="sosTechnique" hidden>
+      <button class="sos-back" id="sosBack" type="button">← Выбрать другую технику</button>
+      <div id="sosTechniqueContent"></div>
+    </div>
+    <div class="sos-footer">
+      <button class="submit-btn" id="sosAddItem" type="button">Добавить вещь в Бережок</button>
+      <button class="btn" id="sosCalmer" type="button">Мне уже спокойнее</button>
+    </div>
+  </div>
 </div>
 
 <!-- Add item sheet -->
@@ -830,6 +939,6 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"><span id="toastText"></span><button type="button" class="toast-action" id="toastAction" hidden></button></div>
 
-<script src="app.js?v=20260811-2"></script>
+<script src="app.js?v=20260811-3"></script>
 </body>
 </html>

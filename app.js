@@ -58,6 +58,19 @@
       action: 'Подождать ещё неделю'
     }
   };
+  const SOS_BREATH_PHASES = [
+    ['Вдох', 'Медленно через нос'],
+    ['Задержи', 'Ничего не нужно делать'],
+    ['Выдох', 'Медленно и спокойно'],
+    ['Задержи', 'И снова сначала']
+  ];
+  const SOS_GROUNDING_STEPS = [
+    [5, 'Назови про себя пять вещей, которые видишь.'],
+    [4, 'Отметь четыре вещи, которых можешь коснуться.'],
+    [3, 'Прислушайся к трём звукам вокруг.'],
+    [2, 'Найди два запаха или просто отметь, чем пахнет воздух.'],
+    [1, 'Заметь один вкус или ощущение во рту.']
+  ];
 
   let items = [];
   let settings = {
@@ -82,6 +95,10 @@
   let needTestAnswers = [];
   let activeNeedTestResult = null;
   let needTestSaving = false;
+  let sosInterval = null;
+  let sosBreathStartedAt = null;
+  let sosBreathPhase = -1;
+  let sosGroundingStep = 0;
   let refreshPromise = null;
   let lastRefreshAt = 0;
   const photoObjectUrls = new Map();
@@ -765,6 +782,208 @@
     $('photoAddLabel').hidden = false;
   }
 
+  function clearSosInterval(){
+    if(sosInterval !== null) clearInterval(sosInterval);
+    sosInterval = null;
+    sosBreathStartedAt = null;
+    sosBreathPhase = -1;
+  }
+
+  function readPauseEnd(){
+    try{
+      const value = Number(localStorage.getItem('berezhok-sos-pause-until'));
+      return Number.isFinite(value) ? value : 0;
+    }catch(error){
+      return 0;
+    }
+  }
+
+  function savePauseEnd(value){
+    try{
+      if(value) localStorage.setItem('berezhok-sos-pause-until', String(value));
+      else localStorage.removeItem('berezhok-sos-pause-until');
+    }catch(error){}
+  }
+
+  function showSosMenu(){
+    clearSosInterval();
+    $('sosMenu').hidden = false;
+    $('sosTechnique').hidden = true;
+    $('sosTechniqueContent').innerHTML = '';
+    const first = document.querySelector('[data-sos-technique]');
+    if(first) first.focus();
+  }
+
+  function openSos(){
+    $('sosOverlay').classList.add('open');
+    showSosMenu();
+  }
+
+  function closeSos(clearPause = false){
+    clearSosInterval();
+    if(clearPause) savePauseEnd(0);
+    $('sosOverlay').classList.remove('open');
+    $('sosBtn').focus();
+  }
+
+  function sosComplete(icon, title, copy, restartLabel, restartHandler){
+    clearSosInterval();
+    $('sosTechniqueContent').innerHTML = `
+      <div class="sos-complete">
+        <div class="sos-complete-icon" aria-hidden="true">${icon}</div>
+        <div class="sos-complete-title">${title}</div>
+        <div class="sos-complete-copy">${copy}</div>
+      </div>
+      <div style="text-align:center;margin-top:14px;">
+        <button class="sos-main-action" id="sosRestartTechnique" type="button">${restartLabel}</button>
+      </div>`;
+    $('sosRestartTechnique').addEventListener('click', restartHandler);
+  }
+
+  function renderBreathing(){
+    clearSosInterval();
+    $('sosTechniqueContent').innerHTML = `
+      <div class="sos-technique-heading">Квадратное дыхание</div>
+      <p class="sos-technique-lead">Следуй за точкой: вдох, пауза, выдох, пауза. Каждый отрезок длится четыре секунды.</p>
+      <div class="breathing-wrap">
+        <div class="breathing-square" id="breathingSquare"><div class="breath-dot"></div></div>
+        <div class="breath-stage" id="breathStage" role="status">Можно начинать</div>
+        <div class="breath-meta"><span id="breathSeconds">4</span> сек. · <span id="breathRound">цикл 1 из 4</span></div>
+        <button class="sos-main-action" id="startBreathing" type="button">Начать дышать</button>
+      </div>`;
+    $('startBreathing').addEventListener('click', startBreathing);
+  }
+
+  function updateBreathing(){
+    if(!sosBreathStartedAt) return;
+    const elapsed = Date.now() - sosBreathStartedAt;
+    const segment = Math.floor(elapsed / 4000);
+    if(segment >= 16){
+      return sosComplete(
+        '🌿',
+        'Четыре круга готовы',
+        'Не нужно принимать решение в ту же секунду. Можно ещё немного побыть в этой паузе.',
+        'Подышать ещё раз',
+        renderBreathing
+      );
+    }
+    const phase = segment % 4;
+    const round = Math.floor(segment / 4) + 1;
+    const seconds = 4 - Math.floor((elapsed % 4000) / 1000);
+    if(phase !== sosBreathPhase){
+      sosBreathPhase = phase;
+      const square = $('breathingSquare');
+      square.className = `breathing-square phase-${phase}`;
+      $('breathStage').textContent = `${SOS_BREATH_PHASES[phase][0]}. ${SOS_BREATH_PHASES[phase][1]}`;
+    }
+    $('breathSeconds').textContent = String(seconds);
+    $('breathRound').textContent = `цикл ${round} из 4`;
+  }
+
+  function startBreathing(){
+    clearSosInterval();
+    const square = $('breathingSquare');
+    square.className = 'breathing-square';
+    void square.offsetWidth;
+    $('startBreathing').textContent = 'Начать заново';
+    requestAnimationFrame(()=>{
+      sosBreathStartedAt = Date.now();
+      updateBreathing();
+      sosInterval = setInterval(updateBreathing, 200);
+    });
+  }
+
+  function updateGrounding(){
+    if(sosGroundingStep >= SOS_GROUNDING_STEPS.length){
+      return sosComplete(
+        '🌱',
+        'Ты снова здесь',
+        'Посмотри, изменилось ли желание купить прямо сейчас. Любой ответ нормален.',
+        'Пройти ещё раз',
+        renderGrounding
+      );
+    }
+    const [count, prompt] = SOS_GROUNDING_STEPS[sosGroundingStep];
+    $('groundingCount').textContent = String(count);
+    $('groundingPrompt').textContent = prompt;
+    $('groundingProgressFill').style.width = `${((sosGroundingStep + 1) / SOS_GROUNDING_STEPS.length) * 100}%`;
+    $('groundingNext').textContent = sosGroundingStep === SOS_GROUNDING_STEPS.length - 1
+      ? 'Завершить' : 'Готово, дальше';
+  }
+
+  function renderGrounding(){
+    clearSosInterval();
+    sosGroundingStep = 0;
+    $('sosTechniqueContent').innerHTML = `
+      <div class="sos-technique-heading">Вернуться в комнату</div>
+      <p class="sos-technique-lead">Не нужно ничего записывать. Просто неспешно найди это вокруг себя.</p>
+      <div class="grounding-progress"><div class="grounding-progress-fill" id="groundingProgressFill"></div></div>
+      <div class="grounding-count" id="groundingCount"></div>
+      <div class="grounding-prompt" id="groundingPrompt"></div>
+      <button class="sos-main-action grounding-action" id="groundingNext" type="button"></button>`;
+    $('groundingNext').addEventListener('click', ()=>{
+      sosGroundingStep += 1;
+      updateGrounding();
+    });
+    updateGrounding();
+  }
+
+  function renderPauseComplete(){
+    savePauseEnd(0);
+    sosComplete(
+      '⏳',
+      'Десять минут прошли',
+      'Хочется так же сильно? Можно купить позже, добавить вещь в Бережок или просто дать себе ещё времени.',
+      'Ещё 10 минут',
+      renderPause
+    );
+  }
+
+  function updatePause(){
+    const remaining = readPauseEnd() - Date.now();
+    if(remaining <= 0) return renderPauseComplete();
+    const totalSeconds = Math.ceil(remaining / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    $('pauseClock').textContent = `${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}`;
+  }
+
+  function startPause(){
+    clearSosInterval();
+    savePauseEnd(Date.now() + 10 * 60 * 1000);
+    $('startPause').textContent = 'Начать заново';
+    updatePause();
+    sosInterval = setInterval(updatePause, 250);
+  }
+
+  function renderPause(){
+    clearSosInterval();
+    $('sosTechniqueContent').innerHTML = `
+      <div class="sos-technique-heading">Пауза на 10 минут</div>
+      <p class="sos-technique-lead">Закрой страницу магазина. В эти десять минут ничего не нужно решать.</p>
+      <div class="pause-clock" id="pauseClock" role="timer" aria-live="off">10:00</div>
+      <p class="pause-note">Таймер продолжит идти, даже если ненадолго закрыть это окно.</p>
+      <div style="text-align:center;"><button class="sos-main-action" id="startPause" type="button">Начать 10 минут</button></div>`;
+    $('startPause').addEventListener('click', startPause);
+    if(readPauseEnd() > Date.now()){
+      $('startPause').textContent = 'Начать заново';
+      updatePause();
+      sosInterval = setInterval(updatePause, 250);
+    }else{
+      savePauseEnd(0);
+    }
+  }
+
+  function showSosTechnique(type){
+    clearSosInterval();
+    $('sosMenu').hidden = true;
+    $('sosTechnique').hidden = false;
+    if(type === 'breathing') renderBreathing();
+    else if(type === 'grounding') renderGrounding();
+    else renderPause();
+    $('sosBack').focus();
+  }
+
   function validatePhoto(file){
     if(file.type && !file.type.startsWith('image/')){
       showToast('Нужен файл с фотографией');
@@ -826,6 +1045,24 @@
     $('addOverlay').classList.remove('open');
     $('openAddBtn').focus();
   }
+
+  $('sosBtn').addEventListener('click', openSos);
+  $('closeSos').addEventListener('click', ()=>closeSos());
+  $('sosOverlay').addEventListener('click', event=>{
+    if(event.target.id === 'sosOverlay') closeSos();
+  });
+  document.querySelectorAll('[data-sos-technique]').forEach(button=>{
+    button.addEventListener('click', ()=>showSosTechnique(button.dataset.sosTechnique));
+  });
+  $('sosBack').addEventListener('click', showSosMenu);
+  $('sosAddItem').addEventListener('click', ()=>{
+    closeSos(true);
+    openAdd();
+  });
+  $('sosCalmer').addEventListener('click', ()=>{
+    closeSos(true);
+    showToast('Хорошо. Решение может подождать');
+  });
 
   $('openAddBtn').addEventListener('click', ()=>openAdd());
   $('closeAdd').addEventListener('click', closeAdd);
@@ -1170,6 +1407,7 @@
     if($('deleteAccountOverlay').classList.contains('open')) closeDeleteAccount();
     else if($('privacyOverlay').classList.contains('open')) closeInfoOverlay('privacyOverlay', 'openPrivacy');
     else if($('helpOverlay').classList.contains('open')) closeHelp();
+    else if($('sosOverlay').classList.contains('open')) closeSos();
     else if($('needTestOverlay').classList.contains('open')) closeNeedTest();
     else if($('snoozeOverlay').classList.contains('open')) closeSnooze();
     else if($('detailOverlay').classList.contains('open')) closeDetail();
