@@ -1462,8 +1462,8 @@
       if(typeof tg.onEvent === 'function'){
         tg.onEvent('activated', refreshWhenActive);
       }
-      try{ tg.setHeaderColor('#EDE9E0'); }catch(error){}
-      try{ tg.setBackgroundColor('#EDE9E0'); }catch(error){}
+      try{ tg.setHeaderColor('#3B2922'); }catch(error){}
+      try{ tg.setBackgroundColor('#DDCBB9'); }catch(error){}
     }
     document.addEventListener('visibilitychange', ()=>{
       if(!document.hidden) refreshWhenActive();

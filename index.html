@@ -9,17 +9,22 @@
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap');
 
   :root{
-    --paper: #EDE9E0;
-    --paper-raised: #F8F5EE;
-    --ink: #2A2822;
-    --ink-soft: #6B675C;
+    --canvas: #DDCBB9;
+    --paper: #F2E7DA;
+    --paper-raised: #FFF9F0;
+    --ink: #34251F;
+    --ink-soft: #735F53;
+    --cocoa: #3B2922;
+    --cocoa-soft: #5A4035;
+    --caramel: #B48662;
+    --cream: #FFF9F0;
     --waiting: #58705F;
-    --waiting-soft: #DDE4DA;
+    --waiting-soft: #CBD5C8;
     --ready: #8C5A6B;
-    --ready-soft: #EFDEE3;
-    --archive: #A79C89;
-    --archive-soft: #E7E2D5;
-    --line: #DCD5C4;
+    --ready-soft: #E0C9D0;
+    --archive: #927560;
+    --archive-soft: #E1D0BF;
+    --line: #D1BBA6;
     --danger: #A85B45;
   }
 
@@ -27,7 +32,7 @@
   [hidden]{display:none!important;}
   html,body{margin:0;padding:0;}
   body{
-    background:var(--paper);
+    background:var(--canvas);
     color:var(--ink);
     font-family:'Inter',-apple-system,'Segoe UI',Roboto,sans-serif;
     -webkit-font-smoothing:antialiased;
@@ -41,9 +46,12 @@
 
   header.top{
     position:sticky;top:0;z-index:20;
-    background:var(--paper);
-    border-bottom:1px solid var(--line);
-    padding:18px 0 14px;
+    background:var(--cocoa);
+    color:var(--cream);
+    border-bottom:0;
+    margin:0 -18px;
+    padding:18px 18px 15px;
+    box-shadow:0 8px 20px rgba(59,41,34,.12);
   }
   header.top .row{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;}
   h1{
@@ -58,21 +66,21 @@
   .tagline{
     margin:6px 0 0;
     font-size:13.5px;
-    color:var(--ink-soft);
+    color:#D9C8B8;
   }
-  .icon-btn{
-    background:none;border:1px solid var(--line);border-radius:10px;
+  header.top .icon-btn{
+    background:rgba(255,249,240,.08);border:1px solid rgba(255,249,240,.26);border-radius:10px;
     width:44px;height:44px;display:flex;align-items:center;justify-content:center;
-    cursor:pointer;color:var(--ink);flex:none;
+    cursor:pointer;color:var(--cream);flex:none;
   }
-  .icon-btn:hover{background:var(--paper-raised);}
+  header.top .icon-btn:hover{background:rgba(255,249,240,.15);}
   .icon-btn svg{width:18px;height:18px;}
 
   main{padding-top:20px;}
 
   .add-btn{
     width:100%;
-    background:var(--ink);
+    background:var(--cocoa);
     color:var(--paper-raised);
     border:none;
     border-radius:14px;
@@ -87,26 +95,27 @@
   .add-btn:active{opacity:0.85;}
   .sos-btn{
     width:100%;display:flex;align-items:center;gap:11px;margin:0 0 26px;
-    padding:11px 13px;border:1px solid #D5BFC6;border-radius:14px;
-    background:var(--ready-soft);color:var(--ink);text-align:left;cursor:pointer;
+    padding:12px 13px;border:1px solid var(--ready);border-radius:14px;
+    background:var(--ready);color:var(--cream);text-align:left;cursor:pointer;
     font-family:'Inter',sans-serif;
+    box-shadow:0 8px 18px rgba(87,48,62,.13);
   }
   .sos-mark{
-    width:42px;height:42px;border-radius:11px;background:var(--ready);color:#fff;
+    width:42px;height:42px;border-radius:11px;background:var(--cream);color:var(--ready);
     display:flex;align-items:center;justify-content:center;flex:none;
     font:700 12px 'IBM Plex Mono',monospace;letter-spacing:.04em;
   }
   .sos-btn-copy{flex:1;min-width:0;}
   .sos-btn-title{display:block;font-size:13.5px;font-weight:650;}
-  .sos-btn-sub{display:block;margin-top:2px;font-size:11.5px;color:var(--ink-soft);}
-  .sos-arrow{font-size:20px;color:var(--ready);flex:none;}
+  .sos-btn-sub{display:block;margin-top:2px;font-size:11.5px;color:#F0E1E6;}
+  .sos-arrow{font-size:20px;color:var(--cream);flex:none;}
 
   .effect{
-    display:none;background:var(--waiting-soft);border:1px solid #C9D4C6;
+    display:none;background:#E6D5C3;border:1px solid #C7A98E;
     border-radius:14px;padding:14px 15px;margin:-14px 0 16px;
   }
   .effect.visible{display:block;}
-  .effect-title{font-family:'Fraunces',serif;font-size:16px;font-weight:600;color:var(--waiting);}
+  .effect-title{font-family:'Fraunces',serif;font-size:16px;font-weight:600;color:var(--cocoa-soft);}
   .effect-text{font-size:12.5px;line-height:1.45;color:var(--ink-soft);margin-top:3px;}
   .monthly{background:var(--paper-raised);border:1px solid var(--line);margin:0 0 16px;}
   .search-wrap{position:relative;margin:0 0 22px;}
@@ -158,6 +167,7 @@
     padding:14px;
     margin-bottom:10px;
     border:1px solid var(--line);
+    box-shadow:0 4px 12px rgba(59,41,34,.045);
   }
   .card.clickable{cursor:pointer;}
   .card.clickable:active{transform:scale(.995);}
@@ -233,7 +243,7 @@
 
   /* modal */
   .overlay{
-    position:fixed;inset:0;background:rgba(42,40,34,0.4);
+    position:fixed;inset:0;background:rgba(52,37,31,0.48);
     display:none;align-items:flex-end;justify-content:center;z-index:50;
   }
   .overlay.open{display:flex;}
@@ -283,7 +293,7 @@
   .price-row input{flex:1;min-width:0;}
   .price-row select{flex:none;width:118px;}
   .submit-btn{
-    width:100%;background:var(--ink);color:var(--paper-raised);
+    width:100%;background:var(--cocoa);color:var(--paper-raised);
     border:none;border-radius:12px;padding:13px;font-size:15px;font-weight:600;
     cursor:pointer;margin-top:6px;font-family:'Inter',sans-serif;
   }
@@ -404,7 +414,7 @@
 
   .channel-link{
     display:flex;align-items:center;gap:11px;margin-top:18px;padding:13px;
-    border:1px solid #C9D4C6;border-radius:13px;background:var(--waiting-soft);
+    border:1px solid #C6AA90;border-radius:13px;background:#E6D5C3;
     color:var(--ink);text-decoration:none;
   }
   .channel-link:active{transform:scale(.995);}
@@ -451,13 +461,13 @@
 
   .toast{
     position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
-    background:var(--ink);color:var(--paper-raised);
+    background:var(--cocoa);color:var(--paper-raised);
     padding:10px 18px;border-radius:100px;font-size:13px;
     opacity:0;pointer-events:none;transition:opacity .2s ease, transform .2s ease;
     z-index:60;white-space:nowrap;display:flex;align-items:center;gap:12px;
   }
   .toast.show{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(-4px);}
-  .toast-action{border:0;background:none;color:#DDE4DA;font:700 13px 'Inter',sans-serif;text-decoration:underline;cursor:pointer;padding:0;}
+  .toast-action{border:0;background:none;color:#D8E0D5;font:700 13px 'Inter',sans-serif;text-decoration:underline;cursor:pointer;padding:0;}
   @media (prefers-reduced-motion: reduce){
     *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}
   }
@@ -487,8 +497,8 @@
     <button class="sos-btn" id="sosBtn" type="button">
       <span class="sos-mark">SOS</span>
       <span class="sos-btn-copy">
-        <span class="sos-btn-title">Хочется купить прямо сейчас?</span>
-        <span class="sos-btn-sub">Небольшая пауза перед импульсивной покупкой</span>
+        <span class="sos-btn-title">Резко захотелось купить прямо сейчас?</span>
+        <span class="sos-btn-sub">Жми SOS, если импульс трудно остановить</span>
       </span>
       <span class="sos-arrow" aria-hidden="true">›</span>
     </button>
@@ -939,6 +949,6 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"><span id="toastText"></span><button type="button" class="toast-action" id="toastAction" hidden></button></div>
 
-<script src="app.js?v=20260811-3"></script>
+<script src="app.js?v=20260811-4"></script>
 </body>
 </html>
