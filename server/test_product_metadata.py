@@ -42,6 +42,34 @@ class ProductMetadataTest(unittest.TestCase):
         self.assertEqual(result.price, "$25.5")
         self.assertEqual(result.image_url, "https://cdn.example/kettle.png")
 
+    def test_microdata_and_image_src_are_used_as_fallbacks(self):
+        html = """
+        <html><head>
+        <link rel="image_src" href="/images/chair.webp">
+        </head><body>
+        <h1 itemprop="name"> Мягкое кресло </h1>
+        <meta itemprop="price" content="12 990">
+        <meta itemprop="priceCurrency" content="RUB">
+        </body></html>
+        """
+        result = parse_product_html(html, "https://shop.example/catalog/chair")
+        self.assertEqual(result.name, "Мягкое кресло")
+        self.assertEqual(result.price, "12990 ₽")
+        self.assertEqual(result.image_url, "https://shop.example/images/chair.webp")
+        self.assertEqual(result.page_url, "https://shop.example/catalog/chair")
+
+    def test_offer_list_uses_offer_that_has_price(self):
+        html = """
+        <script type="application/ld+json">
+        {"@type":"Product","name":"Лампа","offers":[
+          {"@type":"Offer"},
+          {"@type":"Offer","price":"2500","priceCurrency":"RUB"}
+        ]}
+        </script>
+        """
+        result = parse_product_html(html, "https://shop.example/lamp")
+        self.assertEqual(result.price, "2500 ₽")
+
     def test_human_price_input_is_normalized(self):
         ruble_examples = {
             "5000": "5000 ₽",

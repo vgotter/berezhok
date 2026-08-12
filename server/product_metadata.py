@@ -18,6 +18,10 @@ USER_AGENT = (
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
     "AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1"
 )
+PAGE_ACCEPT = (
+    "text/html,application/xhtml+xml,application/xml;q=0.9,"
+    "application/json;q=0.8,*/*;q=0.7"
+)
 CURRENCY_SYMBOLS = {
     "RUB": "₽", "USD": "$", "EUR": "€", "GBP": "£", "GEL": "₾",
     "AMD": "֏", "TRY": "₺", "ILS": "₪", "KZT": "₸", "UAH": "₴",
@@ -99,6 +103,7 @@ class ProductMetadata:
     name: str = ""
     price: str = ""
     image_url: str = ""
+    page_url: str = ""
 
 
 def clean_text(value) -> str:
@@ -131,13 +136,24 @@ def is_product_node(node) -> bool:
 
 def offer_price(offers):
     if isinstance(offers, list):
-        offers = offers[0] if offers else {}
+        candidates = [value for value in offers if isinstance(value, dict)]
+        offers = next(
+            (
+                value for value in candidates
+                if value.get("price") is not None or value.get("lowPrice") is not None
+            ),
+            candidates[0] if candidates else {},
+        )
     if not isinstance(offers, dict):
         return "", ""
     price = offers.get("price") or offers.get("lowPrice")
     currency = offers.get("priceCurrency")
-    if price is None and isinstance(offers.get("priceSpecification"), dict):
-        specification = offers["priceSpecification"]
+    specification = offers.get("priceSpecification")
+    if isinstance(specification, list):
+        specification = next(
+            (value for value in specification if isinstance(value, dict)), {}
+        )
+    if price is None and isinstance(specification, dict):
         price = specification.get("price")
         currency = currency or specification.get("priceCurrency")
     return clean_text(price), clean_text(currency).upper()
@@ -212,9 +228,19 @@ def meta_content(soup, *keys) -> str:
     return ""
 
 
+def itemprop_content(soup, key: str) -> str:
+    tag = soup.find(attrs={"itemprop": key})
+    if not tag:
+        return ""
+    for attribute in ("content", "value", "src", "href"):
+        if tag.get(attribute):
+            return clean_text(tag[attribute])
+    return clean_text(tag.get_text())
+
+
 def parse_product_html(html, base_url: str) -> ProductMetadata:
     soup = BeautifulSoup(html, "html.parser")
-    metadata = ProductMetadata()
+    metadata = ProductMetadata(page_url=base_url)
 
     for script in soup.find_all("script", attrs={"type": "application/ld+json"}):
         try:
@@ -224,8 +250,11 @@ def parse_product_html(html, base_url: str) -> ProductMetadata:
         product = next((node for node in iter_json_nodes(payload) if is_product_node(node)), None)
         if not product:
             continue
-        metadata.name = clean_text(product.get("name"))
+        metadata.name = clean_text(product.get("name") or product.get("headline"))
         amount, currency = offer_price(product.get("offers"))
+        if not amount:
+            amount = clean_text(product.get("price"))
+            currency = clean_text(product.get("priceCurrency")).upper()
         metadata.price = format_price(amount, currency)
         metadata.image_url = clean_text(first_value(product.get("image")))
         break
@@ -234,14 +263,21 @@ def parse_product_html(html, base_url: str) -> ProductMetadata:
     metadata.image_url = metadata.image_url or meta_content(
         soup, "og:image", "og:image:secure_url", "twitter:image"
     )
+    if not metadata.image_url:
+        image_src = soup.find("link", rel=lambda value: value and "image_src" in value)
+        metadata.image_url = clean_text(image_src.get("href")) if image_src else ""
+    metadata.image_url = metadata.image_url or itemprop_content(soup, "image")
     if not metadata.price:
         amount = meta_content(
             soup, "product:price:amount", "og:price:amount", "twitter:data1"
         )
+        amount = amount or itemprop_content(soup, "price")
         currency = meta_content(
             soup, "product:price:currency", "og:price:currency"
         )
+        currency = currency or itemprop_content(soup, "priceCurrency")
         metadata.price = format_price(amount, currency)
+    metadata.name = metadata.name or itemprop_content(soup, "name")
     if not metadata.name and soup.title:
         metadata.name = clean_text(soup.title.get_text())
     if metadata.image_url:
@@ -269,9 +305,22 @@ async def ensure_public_url(url: str) -> str:
     return url
 
 
-async def fetch_bytes(url: str, max_bytes: int, expected: Optional[str] = None):
+async def fetch_bytes(
+    url: str,
+    max_bytes: int,
+    expected: Optional[str] = None,
+    referer: Optional[str] = None,
+):
     timeout = aiohttp.ClientTimeout(total=12, connect=5, sock_read=7)
-    headers = {"User-Agent": USER_AGENT, "Accept-Language": "ru,en;q=0.8"}
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"
+        if expected == "image/" else PAGE_ACCEPT,
+        "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.7",
+        "Cache-Control": "no-cache",
+    }
+    if referer:
+        headers["Referer"] = referer
     current = url
     async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
         for _ in range(6):
@@ -307,6 +356,6 @@ async def fetch_product_metadata(url: str) -> ProductMetadata:
     return parse_product_html(body, final_url)
 
 
-async def fetch_product_image(url: str) -> bytes:
-    _, body, _ = await fetch_bytes(url, MAX_IMAGE_BYTES, "image/")
+async def fetch_product_image(url: str, referer: Optional[str] = None) -> bytes:
+    _, body, _ = await fetch_bytes(url, MAX_IMAGE_BYTES, "image/", referer=referer)
     return body

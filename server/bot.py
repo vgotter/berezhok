@@ -152,7 +152,14 @@ async def monitor_status(message: Message):
 
 def draft_keyboard(row):
     draft_id = row["draft_id"]
-    if row["price"]:
+    needs_name = row["name"].startswith("Вещь с ")
+    if needs_name:
+        first_rows = [
+            [InlineKeyboardButton(text="✏️ Указать название", callback_data=f"draft:name:{draft_id}")],
+            [InlineKeyboardButton(text="💰 Указать цену", callback_data=f"draft:price:{draft_id}")],
+            [InlineKeyboardButton(text="Добавить как есть", callback_data=f"draft:add:{draft_id}")],
+        ]
+    elif row["price"]:
         first_rows = [
             [InlineKeyboardButton(text="Да, добавить", callback_data=f"draft:add:{draft_id}")],
             [
@@ -174,6 +181,11 @@ def draft_keyboard(row):
 
 
 def draft_text(row):
+    if row["name"].startswith("Вещь с "):
+        return (
+            "Этот сайт не отдал мне данные карточки. Ссылка сохранена, "
+            "а название и цену можно быстро указать кнопками ниже."
+        )
     if row["price"]:
         return f"Это «{row['name']}» за {row['price']}, верно?"
     return (
@@ -248,16 +260,50 @@ async def finish_draft_message(callback: CallbackQuery, text: str):
         await callback.message.answer(text, reply_markup=open_app_keyboard())
 
 
-@dp.message(F.text)
+def message_url(message: Message):
+    for text, entities in (
+        (message.text or "", message.entities or []),
+        (message.caption or "", message.caption_entities or []),
+    ):
+        for entity in entities:
+            if entity.type == "text_link" and entity.url:
+                candidate = entity.url
+            elif entity.type == "url":
+                candidate = entity.extract_from(text)
+            else:
+                continue
+            if candidate.startswith(("http://", "https://")):
+                return candidate.rstrip(".,!?;:)]}")
+        match = re.search(r"https?://[^\s<>()]+", text)
+        if match:
+            return match.group(0).rstrip(".,!?;:)]}")
+        match = re.search(r"(?<![\w@])www\.[^\s<>()]+", text, flags=re.IGNORECASE)
+        if match:
+            return "https://" + match.group(0).rstrip(".,!?;:)]}")
+    return ""
+
+
+def shared_name_hint(text: str, url: str) -> str:
+    hint = text.replace(url, " ")
+    hint = re.sub(r"https?://[^\s<>()]+", " ", hint)
+    hint = re.sub(r"(?<![\w@])www\.[^\s<>()]+", " ", hint, flags=re.IGNORECASE)
+    hint = " ".join(hint.strip(" \n\t—–-:,.!?").split())
+    if not 2 <= len(hint) <= 200:
+        return ""
+    return hint
+
+
+@dp.message(F.text | F.caption)
 async def catch_shared_link(message: Message):
-    if not message.text:
+    message_text = message.text or message.caption or ""
+    if not message_text:
         return
     conn = get_conn()
     draft = conn.execute(
         "SELECT * FROM link_drafts WHERE user_id=?", (message.from_user.id,)
     ).fetchone()
     if draft and draft["edit_field"] in {"name", "price"}:
-        if message.text.strip().lower() in {"отмена", "/cancel"}:
+        if message_text.strip().lower() in {"отмена", "/cancel"}:
             conn.execute(
                 "UPDATE link_drafts SET edit_field=NULL WHERE user_id=?",
                 (message.from_user.id,),
@@ -270,7 +316,7 @@ async def catch_shared_link(message: Message):
             await send_draft_confirmation(message, draft)
             return
         field = draft["edit_field"]
-        value = " ".join(message.text.split()).strip()
+        value = " ".join(message_text.split()).strip()
         if field == "name":
             value = value[:200]
         else:
@@ -291,12 +337,11 @@ async def catch_shared_link(message: Message):
         await send_draft_confirmation(message, draft)
         return
     conn.close()
-    if message.text.startswith("/"):
+    if message_text.startswith("/"):
         return
-    match = re.search(r"https?://[^\s<>()]+", message.text)
-    if not match:
+    url = message_url(message)
+    if not url:
         return
-    url = match.group(0).rstrip(".,!?;:)]}")
     if len(url) > 2000:
         await message.answer("Ссылка слишком длинная — попробуй отправить другую.")
         return
@@ -305,20 +350,32 @@ async def catch_shared_link(message: Message):
     metadata = None
     try:
         metadata = await fetch_product_metadata(url)
-    except (ProductFetchError, asyncio.TimeoutError, OSError):
-        pass
+    except (ProductFetchError, asyncio.TimeoutError, OSError) as exc:
+        logger.info(
+            "Не удалось получить карточку товара с %s: %s",
+            urlparse(url).hostname or "неизвестного сайта",
+            exc,
+        )
     draft_id = uuid.uuid4().hex[:8]
     name = (metadata.name if metadata else "")[:200]
+    if not name:
+        name = shared_name_hint(message_text, url)
     if not name:
         name = f"Вещь с {urlparse(url).hostname or 'сайта'}"[:200]
     price = (metadata.price if metadata else "")[:100]
     photo_filename = None
     if metadata and metadata.image_url:
         try:
-            raw_photo = await fetch_product_image(metadata.image_url)
+            raw_photo = await fetch_product_image(
+                metadata.image_url, referer=metadata.page_url or url
+            )
             photo_filename = save_draft_photo(raw_photo, message.from_user.id, draft_id)
-        except (ProductFetchError, asyncio.TimeoutError, OSError):
-            pass
+        except (ProductFetchError, asyncio.TimeoutError, OSError) as exc:
+            logger.info(
+                "Не удалось получить изображение товара с %s: %s",
+                urlparse(url).hostname or "неизвестного сайта",
+                exc,
+            )
 
     conn = get_conn()
     old = conn.execute(
