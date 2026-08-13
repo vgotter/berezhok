@@ -1,7 +1,7 @@
 (function(){
   const DAY = 86400000;
   const API_BASE = 'https://api.my-berezhok-bot.net.ru';
-  const APP_VERSION = '0.10.0';
+  const APP_VERSION = '1.0.0';
   const CURRENCIES = [
     ['₽','₽ рубль'], ['$','$ доллар'], ['€','€ евро'], ['£','£ фунт'],
     ['₾','₾ лари'], ['֏','֏ драм'], ['₺','₺ лира'], ['₪','₪ шекель'],
