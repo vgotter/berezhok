@@ -155,8 +155,7 @@ def draft_keyboard(row):
     needs_name = row["name"].startswith("Вещь с ")
     if needs_name:
         first_rows = [
-            [InlineKeyboardButton(text="✏️ Указать название", callback_data=f"draft:name:{draft_id}")],
-            [InlineKeyboardButton(text="💰 Указать цену", callback_data=f"draft:price:{draft_id}")],
+            [InlineKeyboardButton(text="✏️ Название и цена", callback_data=f"draft:details:{draft_id}")],
             [InlineKeyboardButton(text="Добавить как есть", callback_data=f"draft:add:{draft_id}")],
         ]
     elif row["price"]:
@@ -293,6 +292,23 @@ def shared_name_hint(text: str, url: str) -> str:
     return hint
 
 
+def parse_draft_details(text: str):
+    lines = [" ".join(line.split()) for line in text.splitlines() if line.strip()]
+    if len(lines) >= 2:
+        name = lines[0][:200]
+        price = normalize_user_price(" ".join(lines[1:]))
+        return (name, price) if name and price else None
+    for separator in (" — ", " – ", " - ", ", "):
+        if separator not in text:
+            continue
+        name, price = text.rsplit(separator, 1)
+        name = " ".join(name.split())[:200]
+        price = normalize_user_price(price)
+        if name and price:
+            return name, price
+    return None
+
+
 @dp.message(F.text | F.caption)
 async def catch_shared_link(message: Message):
     message_text = message.text or message.caption or ""
@@ -302,7 +318,7 @@ async def catch_shared_link(message: Message):
     draft = conn.execute(
         "SELECT * FROM link_drafts WHERE user_id=?", (message.from_user.id,)
     ).fetchone()
-    if draft and draft["edit_field"] in {"name", "price"}:
+    if draft and draft["edit_field"] in {"name", "price", "details"}:
         if message_text.strip().lower() in {"отмена", "/cancel"}:
             conn.execute(
                 "UPDATE link_drafts SET edit_field=NULL WHERE user_id=?",
@@ -317,6 +333,27 @@ async def catch_shared_link(message: Message):
             return
         field = draft["edit_field"]
         value = " ".join(message_text.split()).strip()
+        if field == "details":
+            details = parse_draft_details(message_text)
+            if not details:
+                conn.close()
+                await message.answer(
+                    "Не смог разобрать. Пришли название и цену одним сообщением, "
+                    "каждое с новой строки. Например:\n\nБеговая дорожка\n10 000"
+                )
+                return
+            name, price = details
+            conn.execute(
+                "UPDATE link_drafts SET name=?, price=?, edit_field=NULL WHERE user_id=?",
+                (name, price, message.from_user.id),
+            )
+            conn.commit()
+            draft = conn.execute(
+                "SELECT * FROM link_drafts WHERE user_id=?", (message.from_user.id,)
+            ).fetchone()
+            conn.close()
+            await send_draft_confirmation(message, draft)
+            return
         if field == "name":
             value = value[:200]
         else:
@@ -421,7 +458,7 @@ async def on_draft_action(callback: CallbackQuery):
         conn.close()
         await callback.answer("Этот черновик уже неактуален", show_alert=True)
         return
-    if action in {"name", "price"}:
+    if action in {"name", "price", "details"}:
         conn.execute(
             "UPDATE link_drafts SET edit_field=? WHERE user_id=? AND draft_id=?",
             (action, callback.from_user.id, draft_id),
@@ -430,7 +467,11 @@ async def on_draft_action(callback: CallbackQuery):
         conn.close()
         await disable_draft_buttons(callback)
         prompt = (
-            "Пришли новое название одним сообщением. Для выхода напиши «Отмена»."
+            "Пришли название и цену одним сообщением, каждое с новой строки. "
+            "Например:\n\nБеговая дорожка\n10 000\n\n"
+            "Для выхода напиши «Отмена»."
+            if action == "details"
+            else "Пришли новое название одним сообщением. Для выхода напиши «Отмена»."
             if action == "name"
             else "Пришли новую цену, например: 10000, 5 косарей, 300 баксов или $250. Для выхода напиши «Отмена»."
         )

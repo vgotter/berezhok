@@ -5,7 +5,7 @@ import os
 
 os.environ["BOT_TOKEN"] = "123456:test-token"
 
-from bot import message_url, shared_name_hint
+from bot import message_url, parse_draft_details, shared_name_hint
 
 
 class LinkMessageTest(unittest.TestCase):
@@ -36,6 +36,19 @@ class LinkMessageTest(unittest.TestCase):
             shared_name_hint(text, "https://shop.example/item"),
             "Кресло для чтения",
         )
+
+    def test_name_and_price_can_be_sent_in_one_message(self):
+        self.assertEqual(
+            parse_draft_details("Беговая дорожка\n10 косарей"),
+            ("Беговая дорожка", "10000 ₽"),
+        )
+        self.assertEqual(
+            parse_draft_details("Кресло — 300 баксов"),
+            ("Кресло", "$300"),
+        )
+
+    def test_name_and_price_need_a_separator(self):
+        self.assertIsNone(parse_draft_details("Только название"))
 
 
 if __name__ == "__main__":
