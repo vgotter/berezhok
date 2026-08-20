@@ -70,6 +70,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from app import app  # noqa: E402
 import backup  # noqa: E402
+import analytics  # noqa: E402
 import gentle_reminders  # noqa: E402
 import verify_backup  # noqa: E402
 
@@ -127,8 +128,16 @@ class PhotoApiTest(unittest.TestCase):
         config_table = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='app_config'"
         ).fetchone()
+        analytics_tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name IN ('analytics_users', 'analytics_daily')"
+            )
+        }
         conn.close()
         self.assertEqual(config_table[0], "app_config")
+        self.assertEqual(analytics_tables, {"analytics_users", "analytics_daily"})
 
     def test_01b_test_waits_are_visible_only_to_owner(self):
         regular = self.client.get(
@@ -432,10 +441,58 @@ class PhotoApiTest(unittest.TestCase):
         conn = sqlite3.connect(DB_PATH)
         counts = [
             conn.execute(f"SELECT COUNT(*) FROM {table} WHERE user_id=303").fetchone()[0]
-            for table in ("items", "settings", "pending_links", "link_drafts")
+            for table in (
+                "items", "settings", "pending_links", "link_drafts",
+                "analytics_daily", "analytics_users",
+            )
         ]
         conn.close()
-        self.assertEqual(counts, [0, 0, 0, 0])
+        self.assertEqual(counts, [0, 0, 0, 0, 0, 0])
+
+    def test_16b_analytics_counts_actions_without_card_contents(self):
+        user_id = 808
+        first = self.client.get("/api/state", headers=auth_headers(user_id))
+        second = self.client.get("/api/state", headers=auth_headers(user_id))
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        valid = self.client.post(
+            "/api/analytics",
+            headers=auth_headers(user_id),
+            json={"event": "sos_open"},
+        )
+        repeated = self.client.post(
+            "/api/analytics",
+            headers=auth_headers(user_id),
+            json={"event": "sos_open"},
+        )
+        invalid = self.client.post(
+            "/api/analytics",
+            headers=auth_headers(user_id),
+            json={"event": "card_name"},
+        )
+        created = self.client.post(
+            "/api/items",
+            headers=auth_headers(user_id),
+            json={"name": "Секретное название", "price": "12345 ₽"},
+        )
+        self.assertEqual(valid.status_code, 200)
+        self.assertEqual(repeated.status_code, 200)
+        self.assertEqual(invalid.status_code, 422)
+        self.assertEqual(created.status_code, 200)
+
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        snapshot = analytics.stats_snapshot(conn, int(time.time() * 1000))
+        events = conn.execute(
+            "SELECT event, count FROM analytics_daily WHERE user_id=?",
+            (user_id,),
+        ).fetchall()
+        conn.close()
+        self.assertEqual(snapshot["sos_today"], 1)
+        self.assertGreaterEqual(snapshot["items_today"], 1)
+        self.assertEqual(dict(events)["app_open"], 1)
+        self.assertEqual(dict(events)["sos_open"], 1)
+        self.assertNotIn("card_name", dict(events))
 
     def test_17_health_checks_database_bot_backup_and_disk(self):
         now = str(int(time.time() * 1000))

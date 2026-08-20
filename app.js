@@ -102,6 +102,7 @@
   let sosGroundingStep = 0;
   let refreshPromise = null;
   let lastRefreshAt = 0;
+  let searchTracked = false;
   const photoObjectUrls = new Map();
 
   const $ = (id) => document.getElementById(id);
@@ -187,6 +188,12 @@
       if(stateChannel) stateChannel.postMessage('changed');
       localStorage.setItem('berezhok-state-changed', String(Date.now()));
     }catch(error){}
+  }
+
+  function trackAnalytics(event){
+    api('/api/analytics', {
+      method: 'POST', body: JSON.stringify({ event }), silent: true
+    }).catch(()=>{});
   }
 
   async function loadData(){
@@ -871,6 +878,7 @@
   function openSos(){
     $('sosOverlay').classList.add('open');
     showSosMenu();
+    trackAnalytics('sos_open');
   }
 
   function closeSos(clearPause = false){
@@ -1494,6 +1502,10 @@
 
   $('searchInput').addEventListener('input', ()=>{
     searchQuery = $('searchInput').value.trim().toLocaleLowerCase('ru');
+    if(searchQuery && !searchTracked){
+      searchTracked = true;
+      trackAnalytics('search_used');
+    }
     render();
   });
   $('searchClear').addEventListener('click', ()=>{

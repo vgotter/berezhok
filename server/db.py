@@ -119,6 +119,66 @@ def init_db():
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS analytics_users (
+            user_id INTEGER PRIMARY KEY,
+            first_seen_at INTEGER NOT NULL,
+            last_seen_at INTEGER NOT NULL,
+            first_source TEXT NOT NULL DEFAULT 'legacy'
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS analytics_daily (
+            day TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            event TEXT NOT NULL,
+            count INTEGER NOT NULL DEFAULT 1,
+            PRIMARY KEY (day, user_id, event)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS analytics_daily_event_day "
+        "ON analytics_daily(event, day)"
+    )
+
+    # Переносим уже известных Бережку людей в счётчик. Для старых
+    # записей берём самый ранний сохранённый сигнал. Новые входы после
+    # этой миграции получат точное время.
+    known_users = conn.execute(
+        "SELECT user_id FROM settings UNION SELECT user_id FROM items "
+        "UNION SELECT user_id FROM pending_links UNION SELECT user_id FROM link_drafts"
+    ).fetchall()
+    current_time = now_ms()
+    for known in known_users:
+        user_id = known["user_id"]
+        timestamps = []
+        for table, column in (
+            ("items", "added_at"),
+            ("pending_links", "created_at"),
+            ("link_drafts", "created_at"),
+        ):
+            row = conn.execute(
+                f"SELECT MIN({column}) AS first, MAX({column}) AS last "
+                f"FROM {table} WHERE user_id=?",
+                (user_id,),
+            ).fetchone()
+            timestamps.extend(value for value in (row["first"], row["last"]) if value)
+        setting = conn.execute(
+            "SELECT last_seen_at FROM settings WHERE user_id=?", (user_id,)
+        ).fetchone()
+        if setting and setting["last_seen_at"]:
+            timestamps.append(setting["last_seen_at"])
+        first_seen = min(timestamps) if timestamps else current_time
+        last_seen = max(timestamps) if timestamps else current_time
+        conn.execute(
+            "INSERT OR IGNORE INTO analytics_users "
+            "(user_id, first_seen_at, last_seen_at, first_source) VALUES (?,?,?,'legacy')",
+            (user_id, first_seen, last_seen),
+        )
     conn.commit()
     conn.close()
 

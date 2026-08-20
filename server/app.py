@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, ConfigDict, Field
 
+from analytics import track_event
 from db import DB_PATH, get_conn, init_db, new_id, now_ms
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
@@ -147,6 +148,10 @@ class SettingsIn(BaseModel):
 
 class DeleteAccountIn(BaseModel):
     confirmation: str
+
+
+class AnalyticsEventIn(BaseModel):
+    event: str
 
 
 def row_to_item(r):
@@ -278,9 +283,11 @@ def get_state(user: dict = Depends(get_user)):
     conn = get_conn()
     settings_row = load_settings(conn, user_id)
     sweep(conn, user_id, settings_row)
+    seen_at = now_ms()
     conn.execute(
-        "UPDATE settings SET last_seen_at=? WHERE user_id=?", (now_ms(), user_id)
+        "UPDATE settings SET last_seen_at=? WHERE user_id=?", (seen_at, user_id)
     )
+    track_event(conn, user_id, "app_open", seen_at, "app", unique_daily=True)
     conn.commit()
     items = conn.execute(
         "SELECT * FROM items WHERE user_id=? AND deleted_at IS NULL ORDER BY added_at",
@@ -303,14 +310,16 @@ def create_item(item: ItemIn, user_id: int = Depends(get_user_id)):
         raise HTTPException(422, "name must contain 1 to 200 characters")
     conn = get_conn()
     item_id = new_id()
+    created_at = now_ms()
     conn.execute(
         "INSERT INTO items (id, user_id, name, url, price, reason, wait_days, added_at) "
         "VALUES (?,?,?,?,?,?,?,?)",
         (
             item_id, user_id, name, item.url.strip(), item.price.strip(), item.reason.strip(),
-            item.waitDays, now_ms(),
+            item.waitDays, created_at,
         ),
     )
+    track_event(conn, user_id, "item_added", created_at, "app")
     conn.commit()
     conn.close()
     return {"id": item_id}
@@ -345,6 +354,7 @@ async def create_item_with_photo(
         filename = await store_photo(photo, item_id)
 
     conn = get_conn()
+    created_at = now_ms()
     try:
         conn.execute(
             "INSERT INTO items "
@@ -352,9 +362,10 @@ async def create_item_with_photo(
             "VALUES (?,?,?,?,?,?,?,?,?)",
             (
                 item_id, user_id, name, url, price, reason, waitDays,
-                now_ms(), filename,
+                created_at, filename,
             ),
         )
+        track_event(conn, user_id, "item_added", created_at, "app")
         conn.commit()
     except Exception:
         remove_photo(filename)
@@ -439,10 +450,12 @@ def delete_item(item_id: str, user_id: int = Depends(get_user_id)):
     if not row:
         conn.close()
         raise HTTPException(404, "not found")
+    deleted_at = now_ms()
     conn.execute(
         "UPDATE items SET deleted_at=? WHERE id=? AND user_id=?",
-        (now_ms(), item_id, user_id),
+        (deleted_at, item_id, user_id),
     )
+    track_event(conn, user_id, "item_deleted", deleted_at, "app")
     conn.commit()
     conn.close()
     return {"ok": True}
@@ -481,10 +494,12 @@ def decide_item(item_id: str, body: DecisionIn, user_id: int = Depends(get_user_
     if not row:
         conn.close()
         raise HTTPException(404, "not found")
+    decided_at = now_ms()
     conn.execute(
         "UPDATE items SET decision=?, decided_at=?, archived=1 WHERE id=?",
-        (body.decision, now_ms(), item_id),
+        (body.decision, decided_at, item_id),
     )
+    track_event(conn, user_id, f"decision_{body.decision}", decided_at, "app")
     conn.commit()
     conn.close()
     return {"ok": True}
@@ -502,11 +517,13 @@ def snooze_item(item_id: str, body: SnoozeIn, user_id: int = Depends(get_user_id
     if not row:
         conn.close()
         raise HTTPException(404, "not found")
+    snoozed_at = now_ms()
     conn.execute(
         "UPDATE items SET added_at=?, wait_days=?, decision=NULL, decided_at=NULL, "
         "archived=0, notified=0 WHERE id=? AND user_id=?",
-        (now_ms(), body.days, item_id, user_id),
+        (snoozed_at, body.days, item_id, user_id),
     )
+    track_event(conn, user_id, "snoozed", snoozed_at, "app")
     conn.commit()
     conn.close()
     return {"ok": True}
@@ -539,6 +556,7 @@ def save_need_test(
         "need_test_completed_at=? WHERE id=? AND user_id=?",
         (result, json.dumps(body.answers), completed_at, item_id, user_id),
     )
+    track_event(conn, user_id, "need_test_completed", completed_at, "app")
     conn.commit()
     conn.close()
     return {"result": result, "completedAt": completed_at}
@@ -565,6 +583,7 @@ def undo_item(item_id: str, user_id: int = Depends(get_user_id)):
             "notified=0 WHERE id=? AND user_id=?",
             (item_id, user_id),
         )
+    track_event(conn, user_id, "undo", now_ms(), "app")
     conn.commit()
     conn.close()
     return {"ok": True}
@@ -581,11 +600,13 @@ def restore_item(item_id: str, user_id: int = Depends(get_user_id)):
     if not row:
         conn.close()
         raise HTTPException(404, "not found")
+    restored_at = now_ms()
     conn.execute(
         "UPDATE items SET added_at=?, decision=NULL, decided_at=NULL, archived=0, "
         "notified=0 WHERE id=? AND user_id=?",
-        (now_ms(), item_id, user_id),
+        (restored_at, item_id, user_id),
     )
+    track_event(conn, user_id, "restored", restored_at, "app")
     conn.commit()
     conn.close()
     return {"ok": True}
@@ -603,6 +624,21 @@ def consume_pending_link(user_id: int = Depends(get_user_id)):
         conn.commit()
     conn.close()
     return {"url": row["url"] if row else ""}
+
+
+@app.post("/api/analytics")
+def record_client_analytics(
+    body: AnalyticsEventIn, user_id: int = Depends(get_user_id)
+):
+    if body.event not in {"sos_open", "search_used"}:
+        raise HTTPException(422, "invalid analytics event")
+    conn = get_conn()
+    track_event(
+        conn, user_id, body.event, now_ms(), "app", unique_daily=True
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
 
 
 @app.put("/api/settings")
@@ -669,6 +705,13 @@ def export_account(user_id: int = Depends(get_user_id)):
     drafts = conn.execute(
         "SELECT * FROM link_drafts WHERE user_id=?", (user_id,)
     ).fetchall()
+    analytics_user = conn.execute(
+        "SELECT * FROM analytics_users WHERE user_id=?", (user_id,)
+    ).fetchone()
+    analytics_daily = conn.execute(
+        "SELECT * FROM analytics_daily WHERE user_id=? ORDER BY day, event",
+        (user_id,),
+    ).fetchall()
     conn.close()
 
     payload = {
@@ -679,6 +722,8 @@ def export_account(user_id: int = Depends(get_user_id)):
         "items": [row_dict(row) for row in items],
         "pendingLinks": [row_dict(row) for row in pending_links],
         "linkDrafts": [row_dict(row) for row in drafts],
+        "analyticsUser": row_dict(analytics_user) if analytics_user else None,
+        "analyticsDaily": [row_dict(row) for row in analytics_daily],
     }
     archive_data = io.BytesIO()
     with zipfile.ZipFile(archive_data, "w", compression=zipfile.ZIP_DEFLATED) as archive:
@@ -731,6 +776,8 @@ def delete_account(body: DeleteAccountIn, user_id: int = Depends(get_user_id)):
         conn.execute("DELETE FROM pending_links WHERE user_id=?", (user_id,))
         conn.execute("DELETE FROM items WHERE user_id=?", (user_id,))
         conn.execute("DELETE FROM settings WHERE user_id=?", (user_id,))
+        conn.execute("DELETE FROM analytics_daily WHERE user_id=?", (user_id,))
+        conn.execute("DELETE FROM analytics_users WHERE user_id=?", (user_id,))
         conn.commit()
     except Exception:
         conn.rollback()

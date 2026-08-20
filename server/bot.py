@@ -29,6 +29,7 @@ from product_metadata import (
     fetch_product_metadata,
     normalize_user_price,
 )
+from analytics import format_stats, stats_snapshot, track_event
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 WEBAPP_URL = os.environ.get("WEBAPP_URL", "https://vgotter.github.io/berezhok/")
@@ -76,6 +77,18 @@ def open_app_keyboard():
 
 @dp.message(CommandStart())
 async def start(message: Message):
+    conn = get_conn()
+    started_at = now_ms()
+    track_event(
+        conn,
+        message.from_user.id,
+        "bot_start",
+        started_at,
+        "bot",
+        unique_daily=True,
+    )
+    conn.commit()
+    conn.close()
     await message.answer(
         WELCOME_TEXT,
         parse_mode="HTML",
@@ -149,6 +162,17 @@ async def monitor_status(message: Message):
         + (f" · последний сигнал {bot_age} сек. назад" if bot_age is not None else "")
         + (f"\n🛟 Последний бэкап {backup_age} ч. назад" if backup_age is not None else "")
     )
+
+
+@dp.message(Command("stats"))
+async def show_stats(message: Message):
+    username = (message.from_user.username or "").lower()
+    if username != OWNER_USERNAME:
+        return
+    conn = get_conn()
+    snapshot = stats_snapshot(conn, now_ms())
+    conn.close()
+    await message.answer(format_stats(snapshot), parse_mode="HTML")
 
 
 def draft_keyboard(row):
@@ -434,6 +458,7 @@ async def catch_shared_link(message: Message):
         ),
     )
     conn.execute("DELETE FROM pending_links WHERE user_id=?", (message.from_user.id,))
+    track_event(conn, message.from_user.id, "link_shared", now_ms(), "bot")
     conn.commit()
     draft = conn.execute(
         "SELECT * FROM link_drafts WHERE user_id=?", (message.from_user.id,)
@@ -506,14 +531,18 @@ async def on_draft_action(callback: CallbackQuery):
         new_path = draft_photo_path(item_photo)
         os.replace(old_path, new_path)
     try:
+        added_at = now_ms()
         conn.execute(
             "INSERT INTO items "
             "(id, user_id, name, url, price, reason, wait_days, added_at, photo_filename) "
             "VALUES (?,?,?,?,?,'',NULL,?,?)",
             (
                 item_id, callback.from_user.id, draft["name"], draft["url"],
-                draft["price"], now_ms(), item_photo,
+                draft["price"], added_at, item_photo,
             ),
+        )
+        track_event(
+            conn, callback.from_user.id, "link_item_added", added_at, "bot"
         )
         conn.execute(
             "DELETE FROM link_drafts WHERE user_id=? AND draft_id=?",
@@ -559,9 +588,13 @@ async def on_decision(callback: CallbackQuery):
         conn.close()
         await callback.answer("Эта вещь уже решена или удалена")
         return
+    decided_at = now_ms()
     conn.execute(
         "UPDATE items SET decision=?, decided_at=?, archived=1 WHERE id=?",
-        (action, now_ms(), item_id),
+        (action, decided_at, item_id),
+    )
+    track_event(
+        conn, callback.from_user.id, f"decision_{action}", decided_at, "bot"
     )
     conn.commit()
     conn.close()
@@ -589,11 +622,13 @@ async def on_snooze(callback: CallbackQuery):
         conn.close()
         await callback.answer("Эта вещь уже решена или удалена")
         return
+    snoozed_at = now_ms()
     conn.execute(
         "UPDATE items SET added_at=?, wait_days=?, decision=NULL, decided_at=NULL, "
         "archived=0, notified=0 WHERE id=? AND user_id=?",
-        (now_ms(), days, item_id, callback.from_user.id),
+        (snoozed_at, days, item_id, callback.from_user.id),
     )
+    track_event(conn, callback.from_user.id, "snoozed", snoozed_at, "bot")
     conn.commit()
     conn.close()
     await callback.message.edit_text(f"Хорошо, вернусь к этому через {int(days)} дн.")
