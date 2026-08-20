@@ -307,6 +307,25 @@ class PhotoApiTest(unittest.TestCase):
         self.assertFalse(item["archived"])
         self.assertIsNone(item["decision"])
 
+    def test_09b_wishlist_item_can_be_checked_as_bought(self):
+        item_id = self.photo_item_id
+        kept = self.client.post(
+            f"/api/items/{item_id}/decide",
+            headers=auth_headers(101),
+            json={"decision": "keep"},
+        )
+        bought = self.client.post(
+            f"/api/items/{item_id}/decide",
+            headers=auth_headers(101),
+            json={"decision": "bought"},
+        )
+        self.assertEqual(kept.status_code, 200)
+        self.assertEqual(bought.status_code, 200)
+        state = self.client.get("/api/state", headers=auth_headers(101)).json()
+        item = next(item for item in state["items"] if item["id"] == item_id)
+        self.assertEqual(item["decision"], "bought")
+        self.assertTrue(item["archived"])
+
     def test_10_pending_link_is_consumed_once(self):
         conn = sqlite3.connect(DB_PATH)
         conn.execute(

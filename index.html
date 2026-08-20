@@ -225,6 +225,21 @@
   .btn:active{opacity:0.8;}
   .btn.small{flex:none;padding:8px 10px;font-size:12px;}
 
+  .wish-card{padding:13px 14px;}
+  .wish-card-row{display:flex;align-items:center;gap:12px;}
+  .wish-card .card-top{flex:1;min-width:0;}
+  .wish-check{
+    width:38px;height:38px;border-radius:12px;border:1.5px solid var(--waiting);
+    background:transparent;color:var(--waiting);cursor:pointer;flex:none;
+    display:flex;align-items:center;justify-content:center;
+    font:700 18px 'Inter',sans-serif;
+  }
+  .wish-check:active{background:var(--waiting-soft);}
+  .wish-check-label{
+    display:block;margin-top:7px;text-align:right;
+    color:var(--ink-soft);font-size:11px;
+  }
+
   .archive-toggle{
     background:none;border:none;color:var(--ink-soft);
     font-size:12.5px;cursor:pointer;padding:0;text-decoration:underline;
@@ -548,6 +563,15 @@
       <div id="waitingList"></div>
     </div>
 
+    <div class="section" id="wishlistSection">
+      <div class="section-head">
+        <span class="section-title">Список желаний</span>
+        <span class="section-count" id="wishlistCount">0</span>
+      </div>
+      <div class="section-hint">Если что-то купишь, просто отметь галочкой.</div>
+      <div id="wishlistList"></div>
+    </div>
+
     <div class="section" id="archiveSection">
       <div class="section-head">
         <button class="archive-toggle" id="archiveToggle">Архив (<span id="archiveCount">0</span>) — показать</button>
@@ -732,7 +756,7 @@
     <div class="detail-actions" id="detailActions">
       <button class="btn bought" type="button" data-detail-action="bought"></button>
       <button class="btn drop" type="button" data-detail-action="drop">Уже не надо</button>
-      <button class="btn" type="button" data-detail-action="keep">Оставить в желаниях</button>
+      <button class="btn" type="button" data-detail-action="keep">В список желаний</button>
       <button class="btn snooze" type="button" data-detail-action="snooze">Подождать ещё</button>
     </div>
     <button type="button" class="submit-btn" id="restoreItem" hidden>Вернуть на подумать</button>
@@ -961,6 +985,6 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"><span id="toastText"></span><button type="button" class="toast-action" id="toastAction" hidden></button></div>
 
-<script src="app.js?v=20260813-2"></script>
+<script src="app.js?v=20260820-1"></script>
 </body>
 </html>

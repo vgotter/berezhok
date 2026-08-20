@@ -390,7 +390,7 @@
         <div class="actions ready-actions">
           <button class="btn bought" data-action="bought" data-id="${item.id}">${say('Купила','Купил')}</button>
           <button class="btn drop" data-action="drop" data-id="${item.id}">Уже не надо</button>
-          <button class="btn" data-action="keep" data-id="${item.id}">В желания</button>
+          <button class="btn" data-action="keep" data-id="${item.id}">В список желаний</button>
           <button class="btn" data-action="snooze" data-id="${item.id}">Подождать ещё</button>
         </div>
       </div>`;
@@ -418,10 +418,28 @@
       </div>`;
   }
 
+  function renderWishlistCard(item){
+    return `
+      <div class="card wish-card clickable" data-id="${item.id}" tabindex="0" role="button" aria-label="Открыть ${escAttr(item.name)}">
+        <div class="wish-card-row">
+          <div class="card-top">
+            ${thumbHTML(item)}
+            <div class="card-info">
+              ${itemNameHTML(item)}
+              ${item.price ? `<div class="card-price">${escHTML(displayPrice(item.price))}</div>` : ''}
+            </div>
+          </div>
+          <button class="wish-check" type="button" role="checkbox" aria-checked="false"
+            aria-label="Отметить как купленное" data-action="bought" data-id="${item.id}">✓</button>
+        </div>
+        <span class="wish-check-label">${say('Купила?','Купил?')} Отметь галочкой</span>
+      </div>`;
+  }
+
   function renderArchiveRow(item){
     let badge;
     if(item.decision === 'bought') badge = `<span class="badge kept">${say('купила','купил')}</span>`;
-    else if(item.decision === 'keep') badge = `<span class="badge kept">${say('оставила в желаниях','оставил в желаниях')}</span>`;
+    else if(item.decision === 'keep') badge = '<span class="badge kept">в списке желаний</span>';
     else if(item.decision === 'expired') badge = '<span class="badge expired">истёк срок</span>';
     else badge = `<span class="badge dropped">${say('отказалась','отказался')}</span>`;
     return `
@@ -514,7 +532,7 @@
         if(parsed) totals.set(parsed.currency, (totals.get(parsed.currency) || 0) + parsed.amount);
       });
       const saved = Array.from(totals, ([currency, amount])=>formatAmount(amount, currency));
-      const parts = [`куплено: ${bought}`, `не понадобилось: ${dropped.length}`, `в желаниях: ${kept}`];
+      const parts = [`куплено: ${bought}`, `не понадобилось: ${dropped.length}`, `в списке желаний: ${kept}`];
       if(saved.length) parts.push(`сохранено: ${saved.join(' · ')}`);
       $('monthlyText').textContent = parts.join(' · ');
     }
@@ -552,13 +570,15 @@
     const filtered = items.filter(matchesSearch);
     const ready = filtered.filter(item=>itemStatus(item) === 'ready');
     const waiting = filtered.filter(item=>itemStatus(item) === 'waiting');
-    const archived = filtered.filter(item=>itemStatus(item) === 'archived');
+    const wishlist = filtered.filter(item=>item.decision === 'keep');
+    const archived = filtered.filter(item=>itemStatus(item) === 'archived' && item.decision !== 'keep');
     const searching = Boolean(searchQuery);
 
     $('searchClear').classList.toggle('visible', searching);
     $('searchEmpty').classList.toggle('visible', searching && filtered.length === 0);
     $('readyCount').textContent = ready.length;
     $('waitingCount').textContent = waiting.length;
+    $('wishlistCount').textContent = wishlist.length;
     $('archiveCount').textContent = archived.length;
 
     $('readySection').style.display = searching && !ready.length ? 'none' : 'block';
@@ -585,6 +605,11 @@
         : '<div class="empty">Список ожидания пуст. Добавь то, на что смотришь прямо сейчас — вернёмся к этому позже.</div>';
     }
 
+    $('wishlistSection').style.display = searching && !wishlist.length ? 'none' : 'block';
+    $('wishlistList').innerHTML = wishlist.length
+      ? wishlist.slice().reverse().map(renderWishlistCard).join('')
+      : '<div class="empty">Здесь появятся вещи, которые ты решишь оставить в списке желаний.</div>';
+
     $('archiveSection').style.display = searching && !archived.length ? 'none' : 'block';
     $('archiveList').innerHTML = archived.length
       ? archived.slice().reverse().map(renderArchiveRow).join('')
@@ -600,7 +625,7 @@
 
   function decisionToast(action){
     if(action === 'bought') return say('Купила — пусть радует!','Купил — пусть радует!');
-    if(action === 'keep') return say('Оставила в желаниях','Оставил в желаниях');
+    if(action === 'keep') return say('Добавила в список желаний','Добавил в список желаний');
     return say('Убрала из списка','Убрал из списка');
   }
 
@@ -636,7 +661,7 @@
     if(status === 'ready') return 'Пора принять решение';
     if(status === 'waiting') return 'Вещь ещё ждёт своего часа';
     if(item.decision === 'bought') return say('Купила','Купил');
-    if(item.decision === 'keep') return say('Оставила в желаниях','Оставил в желаниях');
+    if(item.decision === 'keep') return 'В списке желаний';
     if(item.decision === 'drop') return say('Отказалась от покупки','Отказался от покупки');
     return 'Перенесено в архив';
   }
