@@ -1,11 +1,16 @@
+import os
+import sqlite3
 import unittest
 from types import SimpleNamespace
 
-import os
-
 os.environ["BOT_TOKEN"] = "123456:test-token"
 
-from bot import message_url, parse_draft_details, shared_name_hint
+from bot import (
+    mark_reminder_undeliverable,
+    message_url,
+    parse_draft_details,
+    shared_name_hint,
+)
 
 
 class LinkMessageTest(unittest.TestCase):
@@ -53,6 +58,20 @@ class LinkMessageTest(unittest.TestCase):
 
     def test_name_and_price_need_a_separator(self):
         self.assertIsNone(parse_draft_details("Только название"))
+
+    def test_blocked_recipient_stops_only_that_reminder(self):
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE items (id TEXT PRIMARY KEY, notified INTEGER)")
+        conn.executemany(
+            "INSERT INTO items (id, notified) VALUES (?, 0)",
+            (("blocked",), ("another",)),
+        )
+
+        mark_reminder_undeliverable(conn, "blocked")
+
+        rows = dict(conn.execute("SELECT id, notified FROM items"))
+        conn.close()
+        self.assertEqual(rows, {"blocked": 1, "another": 0})
 
 
 if __name__ == "__main__":

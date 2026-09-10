@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from aiogram import Bot, Dispatcher, F
+from aiogram.exceptions import TelegramForbiddenError
 from aiogram.types import (
     CallbackQuery,
     FSInputFile,
@@ -583,6 +584,12 @@ def user_word(pronoun, feminine, masculine, neutral):
     return masculine if pronoun == "he" else feminine
 
 
+def mark_reminder_undeliverable(conn, item_id: str):
+    """Stops retries when Telegram says the recipient cannot receive bot messages."""
+    conn.execute("UPDATE items SET notified=1 WHERE id=?", (item_id,))
+    conn.commit()
+
+
 @dp.callback_query(
     F.data.startswith("keep:")
     | F.data.startswith("drop:")
@@ -716,6 +723,12 @@ async def reminder_loop():
                         )
                         conn.execute("UPDATE items SET notified=1 WHERE id=?", (r["id"],))
                         conn.commit()
+                    except TelegramForbiddenError:
+                        mark_reminder_undeliverable(conn, r["id"])
+                        logger.info(
+                            "Напоминание закрыто: получатель недоступен для бота, item_id=%s",
+                            r["id"],
+                        )
                     except Exception:
                         logger.exception(
                             "Не удалось отправить напоминание для item_id=%s", r["id"]
@@ -734,6 +747,11 @@ async def reminder_loop():
                             setting["user_id"],
                             reminder_text(setting["user_id"], now),
                             reply_markup=open_app_keyboard(),
+                        )
+                    except TelegramForbiddenError:
+                        logger.info(
+                            "Тихое напоминание пропущено: получатель недоступен для бота, user_id=%s",
+                            setting["user_id"],
                         )
                     except Exception:
                         logger.exception(
