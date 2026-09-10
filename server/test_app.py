@@ -114,15 +114,23 @@ class PhotoApiTest(unittest.TestCase):
         self.assertIn("photo_filename", columns)
         self.assertIn("reason", columns)
         self.assertIn("deleted_at", columns)
+        self.assertIn("ready_at", columns)
         self.assertIn("need_test_result", columns)
         self.assertIn("need_test_answers", columns)
         self.assertIn("need_test_completed_at", columns)
         self.assertIn("self_pronoun", settings_columns)
+        self.assertIn("default_currency", settings_columns)
         self.assertIn("gentle_reminders", settings_columns)
         self.assertIn("last_seen_at", settings_columns)
         self.assertIn("last_gentle_reminder_at", settings_columns)
         self.assertEqual(old_item[0], "Старая вещь")
         self.assertEqual(old_settings, (14.0, "she"))
+        conn = sqlite3.connect(DB_PATH)
+        default_currency = conn.execute(
+            "SELECT default_currency FROM settings WHERE user_id=101"
+        ).fetchone()[0]
+        conn.close()
+        self.assertEqual(default_currency, "₽")
         self.assertEqual(draft_table[0], "link_drafts")
         conn = sqlite3.connect(DB_PATH)
         config_table = conn.execute(
@@ -281,6 +289,15 @@ class PhotoApiTest(unittest.TestCase):
         saved = next(item for item in state["items"] if item["id"] == item_id)
         self.assertEqual(saved["decision"], "bought")
         self.assertEqual(state["settings"]["selfPronoun"], "he")
+        neutral = self.client.put(
+            "/api/settings",
+            headers=auth_headers(101),
+            json={"selfPronoun": "neutral", "defaultCurrency": "֏"},
+        )
+        self.assertEqual(neutral.status_code, 200)
+        state = self.client.get("/api/state", headers=auth_headers(101)).json()
+        self.assertEqual(state["settings"]["selfPronoun"], "neutral")
+        self.assertEqual(state["settings"]["defaultCurrency"], "֏")
 
     def test_08_delete_is_owner_scoped(self):
         created = self.client.post(
@@ -366,6 +383,39 @@ class PhotoApiTest(unittest.TestCase):
         )
         self.assertAlmostEqual(item["waitDays"], five_minutes)
 
+    def test_11b_calendar_date_can_be_created_and_snoozed(self):
+        ready_at = int(time.time() * 1000) + 2 * 86400000
+        created = self.client.post(
+            "/api/items",
+            headers=auth_headers(101),
+            json={"name": "До зарплаты", "waitDays": 7, "readyAt": ready_at},
+        )
+        self.assertEqual(created.status_code, 200)
+        item_id = created.json()["id"]
+        state = self.client.get("/api/state", headers=auth_headers(101)).json()
+        item = next(entry for entry in state["items"] if entry["id"] == item_id)
+        self.assertEqual(item["readyAt"], ready_at)
+        self.assertIsNone(item["waitDays"])
+
+        later = ready_at + 86400000
+        snoozed = self.client.post(
+            f"/api/items/{item_id}/snooze",
+            headers=auth_headers(101),
+            json={"readyAt": later},
+        )
+        self.assertEqual(snoozed.status_code, 200)
+        state = self.client.get("/api/state", headers=auth_headers(101)).json()
+        item = next(entry for entry in state["items"] if entry["id"] == item_id)
+        self.assertEqual(item["readyAt"], later)
+        self.assertIsNone(item["waitDays"])
+
+        conflicting = self.client.post(
+            f"/api/items/{item_id}/snooze",
+            headers=auth_headers(101),
+            json={"days": 3, "readyAt": later},
+        )
+        self.assertEqual(conflicting.status_code, 422)
+
     def test_12_backup_contains_database_and_photos(self):
         os.makedirs(PHOTO_DIR, exist_ok=True)
         Image.new("RGB", (30, 30), (88, 112, 95)).save(
@@ -401,8 +451,14 @@ class PhotoApiTest(unittest.TestCase):
             headers=auth_headers(101),
             json={"defaultWaitDays": -1},
         )
+        bad_currency = self.client.put(
+            "/api/settings",
+            headers=auth_headers(101),
+            json={"defaultCurrency": "BTC"},
+        )
         self.assertEqual(bad_action.status_code, 422)
         self.assertEqual(bad_time.status_code, 422)
+        self.assertEqual(bad_currency.status_code, 422)
 
     def test_15_account_export_contains_json_and_photos(self):
         source = io.BytesIO()
@@ -571,12 +627,12 @@ class PhotoApiTest(unittest.TestCase):
         denied = self.client.post(
             f"/api/items/{item_id}/need-test",
             headers=auth_headers(606),
-            json={"answers": [2, 2, 2, 2, 2, 2, 2]},
+            json={"answers": [2, 2, 2, 2, 2, 2, 2, 2]},
         )
         saved = self.client.post(
             f"/api/items/{item_id}/need-test",
             headers=auth_headers(505),
-            json={"answers": [2, 2, 2, 2, 2, 2, 2]},
+            json={"answers": [2, 2, 2, 2, 2, 2, 2, 2]},
         )
         self.assertEqual(invalid.status_code, 422)
         self.assertEqual(denied.status_code, 404)
@@ -585,14 +641,20 @@ class PhotoApiTest(unittest.TestCase):
         not_needed = self.client.post(
             f"/api/items/{item_id}/need-test",
             headers=auth_headers(505),
-            json={"answers": [0, 0, 0, 0, 0, 0, 0]},
+            json={"answers": [0, 0, 0, 0, 0, 0, 0, 0]},
+        )
+        legacy_answers = self.client.post(
+            f"/api/items/{item_id}/need-test",
+            headers=auth_headers(505),
+            json={"answers": [2, 2, 2, 2, 2, 2, 2]},
         )
         unclear = self.client.post(
             f"/api/items/{item_id}/need-test",
             headers=auth_headers(505),
-            json={"answers": [1, 1, 1, 1, 1, 1, 1]},
+            json={"answers": [1, 1, 1, 1, 1, 1, 1, 1]},
         )
         self.assertEqual(not_needed.json()["result"], "not_needed")
+        self.assertEqual(legacy_answers.status_code, 200)
         self.assertEqual(unclear.json()["result"], "unclear")
         state = self.client.get("/api/state", headers=auth_headers(505)).json()
         item = next(entry for entry in state["items"] if entry["id"] == item_id)

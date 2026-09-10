@@ -24,6 +24,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from db import DB_PATH, get_conn, init_db, new_id, now_ms
 from gentle_reminders import reminder_candidates, reminder_text
 from product_metadata import (
+    CURRENCY_SYMBOLS,
     ProductFetchError,
     fetch_product_image,
     fetch_product_metadata,
@@ -318,18 +319,29 @@ def shared_name_hint(text: str, url: str) -> str:
     return hint
 
 
-def parse_draft_details(text: str):
+def default_currency_code(conn, user_id: int) -> str:
+    row = conn.execute(
+        "SELECT default_currency FROM settings WHERE user_id=?", (user_id,)
+    ).fetchone()
+    symbol = row["default_currency"] if row and row["default_currency"] else "₽"
+    return next(
+        (code for code, stored_symbol in CURRENCY_SYMBOLS.items() if stored_symbol == symbol),
+        "RUB",
+    )
+
+
+def parse_draft_details(text: str, default_currency: str = "RUB"):
     lines = [" ".join(line.split()) for line in text.splitlines() if line.strip()]
     if len(lines) >= 2:
         name = lines[0][:200]
-        price = normalize_user_price(" ".join(lines[1:]))
+        price = normalize_user_price(" ".join(lines[1:]), default_currency)
         return (name, price) if name and price else None
     for separator in (" — ", " – ", " - ", ", "):
         if separator not in text:
             continue
         name, price = text.rsplit(separator, 1)
         name = " ".join(name.split())[:200]
-        price = normalize_user_price(price)
+        price = normalize_user_price(price, default_currency)
         if name and price:
             return name, price
     return None
@@ -341,6 +353,7 @@ async def catch_shared_link(message: Message):
     if not message_text:
         return
     conn = get_conn()
+    default_currency = default_currency_code(conn, message.from_user.id)
     draft = conn.execute(
         "SELECT * FROM link_drafts WHERE user_id=?", (message.from_user.id,)
     ).fetchone()
@@ -360,7 +373,7 @@ async def catch_shared_link(message: Message):
         field = draft["edit_field"]
         value = " ".join(message_text.split()).strip()
         if field == "details":
-            details = parse_draft_details(message_text)
+            details = parse_draft_details(message_text, default_currency)
             if not details:
                 conn.close()
                 await message.answer(
@@ -383,7 +396,7 @@ async def catch_shared_link(message: Message):
         if field == "name":
             value = value[:200]
         else:
-            value = normalize_user_price(value)
+            value = normalize_user_price(value, default_currency)
         if not value:
             conn.close()
             await message.answer("Нужно прислать непустое значение.")
@@ -425,7 +438,8 @@ async def catch_shared_link(message: Message):
         name = shared_name_hint(message_text, url)
     if not name:
         name = f"Вещь с {urlparse(url).hostname or 'сайта'}"[:200]
-    price = (metadata.price if metadata else "")[:100]
+    raw_price = (metadata.price if metadata else "")[:100]
+    price = normalize_user_price(raw_price, default_currency) if raw_price else ""
     photo_filename = None
     if metadata and metadata.image_url:
         try:
@@ -563,7 +577,9 @@ async def on_draft_action(callback: CallbackQuery):
     await callback.answer("Добавлено")
 
 
-def user_word(pronoun, feminine, masculine):
+def user_word(pronoun, feminine, masculine, neutral):
+    if pronoun == "neutral":
+        return neutral
     return masculine if pronoun == "he" else feminine
 
 
@@ -600,11 +616,11 @@ async def on_decision(callback: CallbackQuery):
     conn.close()
     pronoun = row["self_pronoun"] or "she"
     if action == "keep":
-        text = user_word(pronoun, "Записала", "Записал") + " — вещь остаётся в желаниях 🙂"
+        text = user_word(pronoun, "Записала", "Записал", "Записано") + " — вещь остаётся в желаниях 🙂"
     elif action == "bought":
-        text = user_word(pronoun, "Купила", "Купил") + " — пусть радует!"
+        text = user_word(pronoun, "Купила", "Купил", "Уже куплено") + " — пусть радует!"
     else:
-        text = user_word(pronoun, "Убрала", "Убрал") + " из списка"
+        text = user_word(pronoun, "Убрала", "Убрал", "Убрано") + " из списка"
     await callback.message.edit_text(text)
     await callback.answer()
 
@@ -624,7 +640,7 @@ async def on_snooze(callback: CallbackQuery):
         return
     snoozed_at = now_ms()
     conn.execute(
-        "UPDATE items SET added_at=?, wait_days=?, decision=NULL, decided_at=NULL, "
+        "UPDATE items SET added_at=?, wait_days=?, ready_at=NULL, decision=NULL, decided_at=NULL, "
         "archived=0, notified=0 WHERE id=? AND user_id=?",
         (snoozed_at, days, item_id, callback.from_user.id),
     )
@@ -661,11 +677,14 @@ async def reminder_loop():
                 """
             ).fetchall()
             for r in rows:
-                wait = r["wait_days"] if r["wait_days"] is not None else (r["default_wait"] or 7)
-                ready_at = r["added_at"] + wait * DAY
+                if r["ready_at"] is not None:
+                    ready_at = r["ready_at"]
+                else:
+                    wait = r["wait_days"] if r["wait_days"] is not None else (r["default_wait"] or 7)
+                    ready_at = r["added_at"] + wait * DAY
                 if now >= ready_at:
                     bought_text = user_word(
-                        r["self_pronoun"] or "she", "Купила", "Купил"
+                        r["self_pronoun"] or "she", "Купила", "Купил", "Уже куплено"
                     )
                     keyboard = InlineKeyboardMarkup(
                         inline_keyboard=[
@@ -687,6 +706,7 @@ async def reminder_loop():
                                 r["self_pronoun"] or "she",
                                 "Ты хотела этого потому, что",
                                 "Ты хотел этого потому, что",
+                                "Причина из карточки",
                             )
                             reason = f"\n{reason_intro}: {r['reason']}"
                         await bot.send_message(

@@ -311,6 +311,9 @@
   .price-row{display:flex;gap:8px;}
   .price-row input{flex:1;min-width:0;}
   .price-row select{flex:none;width:118px;}
+  .wait-date-field{margin-top:9px;padding:11px;border:1px solid var(--line);border-radius:11px;background:var(--paper-raised);}
+  .wait-date-field label{margin-bottom:7px;}
+  .wait-date-field .submit-btn{margin-top:9px;}
   .submit-btn{
     width:100%;background:var(--cocoa);color:var(--paper-raised);
     border:none;border-radius:12px;padding:13px;font-size:15px;font-weight:600;
@@ -690,7 +693,13 @@
           <option value="7">Неделю</option>
           <option value="14">Две недели</option>
           <option value="30">Месяц</option>
+          <option value="date">До определённой даты</option>
         </select>
+        <div class="wait-date-field" id="f-wait-date-field" hidden>
+          <label for="f-wait-date">Выбери день</label>
+          <input type="date" id="f-wait-date">
+          <div class="field-note">Бережок напомнит в 12:00 по твоему местному времени.</div>
+        </div>
       </div>
       <button type="submit" class="submit-btn">Положить в лист ожидания</button>
     </form>
@@ -744,13 +753,19 @@
           <option value="7">Неделю</option>
           <option value="14">Две недели</option>
           <option value="30">Месяц</option>
+          <option value="date">До определённой даты</option>
         </select>
+        <div class="wait-date-field" id="d-wait-date-field" hidden>
+          <label for="d-wait-date">Выбери день</label>
+          <input type="date" id="d-wait-date">
+          <div class="field-note">Бережок напомнит в 12:00 по твоему местному времени.</div>
+        </div>
       </div>
       <button type="submit" class="submit-btn">Сохранить изменения</button>
     </form>
     <div class="need-test-entry" id="needTestEntry">
       <div class="need-test-entry-title">Мне действительно это нужно?</div>
-      <div class="need-test-entry-copy" id="needTestSummary">Семь спокойных вопросов, чтобы свериться с собой.</div>
+      <div class="need-test-entry-copy" id="needTestSummary">Восемь спокойных вопросов, чтобы свериться с собой.</div>
       <button class="btn" type="button" id="openNeedTest">Пройти короткий тест</button>
     </div>
     <div class="detail-actions" id="detailActions">
@@ -806,6 +821,13 @@
       <button class="snooze-option" data-snooze-days="7">Неделю</button>
       <button class="snooze-option" data-snooze-days="14">Две недели</button>
       <button class="snooze-option" data-snooze-days="30">Месяц</button>
+      <button class="snooze-option" type="button" id="snoozeDateOption">До определённой даты</button>
+    </div>
+    <div class="wait-date-field" id="snoozeDateField" hidden>
+      <label for="snoozeDate">Выбери день</label>
+      <input type="date" id="snoozeDate">
+      <div class="field-note">Напоминание придёт в 12:00 по твоему местному времени.</div>
+      <button class="submit-btn" type="button" id="snoozeDateSubmit">Подождать до этой даты</button>
     </div>
   </div>
 </div>
@@ -823,7 +845,31 @@
       <select id="s-pronoun">
         <option value="she">она</option>
         <option value="he">он</option>
+        <option value="neutral">безлично</option>
       </select>
+    </div>
+
+    <div class="field">
+      <label for="s-currency">Валюта по умолчанию</label>
+      <select id="s-currency">
+        <option value="₽">₽ рубль</option>
+        <option value="$">$ доллар</option>
+        <option value="€">€ евро</option>
+        <option value="£">£ фунт</option>
+        <option value="₾">₾ лари</option>
+        <option value="֏">֏ драм</option>
+        <option value="₺">₺ лира</option>
+        <option value="₪">₪ шекель</option>
+        <option value="₸">₸ тенге</option>
+        <option value="₴">₴ гривна</option>
+        <option value="сом">сом кыргызский</option>
+        <option value="сум">сум узбекский</option>
+        <option value="дин">дин сербский</option>
+        <option value="AED">AED дирхам</option>
+        <option value="Br">Br бел. рубль</option>
+        <option value="¥">¥ юань</option>
+      </select>
+      <div class="field-note">Подставится в новых карточках и в чате, если валюта не указана.</div>
     </div>
 
     <div class="field">
@@ -856,7 +902,7 @@
     </div>
 
     <div class="field" style="margin-top:14px;">
-      <label for="s-archiveAction" id="archiveDecisionLabel">Если не приняла решение за месяц</label>
+      <label for="s-archiveAction" id="archiveDecisionLabel">Если решение не принято за месяц</label>
       <select id="s-archiveAction">
         <option value="archive">Переносить в архив</option>
         <option value="delete">Просто убирать из списка</option>
@@ -926,7 +972,7 @@
         <span class="settings-link-arrow" aria-hidden="true">›</span>
       </button>
     </div>
-    <div class="version-note">Бережок <span id="appVersion">1.0.0</span></div>
+    <div class="version-note">Бережок <span id="appVersion">1.1.0</span></div>
   </div>
 </div>
 
@@ -987,6 +1033,6 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"><span id="toastText"></span><button type="button" class="toast-action" id="toastAction" hidden></button></div>
 
-<script src="app.js?v=20260820-2"></script>
+<script src="app.js?v=20260910-1"></script>
 </body>
 </html>

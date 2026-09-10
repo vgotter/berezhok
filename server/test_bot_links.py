@@ -46,6 +46,10 @@ class LinkMessageTest(unittest.TestCase):
             parse_draft_details("Кресло — 300 баксов"),
             ("Кресло", "$300"),
         )
+        self.assertEqual(
+            parse_draft_details("Утятница\n5000", "AMD"),
+            ("Утятница", "5000 ֏"),
+        )
 
     def test_name_and_price_need_a_separator(self):
         self.assertIsNone(parse_draft_details("Только название"))

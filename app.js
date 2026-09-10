@@ -1,7 +1,7 @@
 (function(){
   const DAY = 86400000;
   const API_BASE = 'https://api.my-berezhok-bot.net.ru';
-  const APP_VERSION = '1.0.0';
+  const APP_VERSION = '1.1.0';
   const CURRENCIES = [
     ['₽','₽ рубль'], ['$','$ доллар'], ['€','€ евро'], ['£','£ фунт'],
     ['₾','₾ лари'], ['֏','֏ драм'], ['₺','₺ лира'], ['₪','₪ шекель'],
@@ -23,9 +23,8 @@
       options: [['Каждую неделю или чаще', 2], ['Время от времени', 1], ['Пока не представляю', 0]]
     },
     {
-      question: ()=>say('Ты хотела эту вещь до того, как увидела рекламу, скидку или её у кого-то?', 'Ты хотел эту вещь до того, как увидел рекламу, скидку или её у кого-то?'),
-      options: [['Да, это желание появилось раньше', 2], ['Думала о чём-то похожем', 1], ['Нет, желание появилось только сейчас', 0]],
-      masculineOptions: [['Да, это желание появилось раньше', 2], ['Думал о чём-то похожем', 1], ['Нет, желание появилось только сейчас', 0]]
+      question: 'Желание купить эту вещь появилось до рекламы, скидки или чужой рекомендации?',
+      options: [['Да, оно появилось раньше', 2], ['Похожие мысли уже были', 1], ['Нет, желание появилось только сейчас', 0]]
     },
     {
       question: 'Что произойдёт, если её не купить?',
@@ -36,9 +35,12 @@
       options: [['Да, без ущерба важному', 2], ['Придётся отложить другую цель', 1], ['Только в долг или за счёт необходимого', 0]]
     },
     {
-      question: 'Представь, что эту вещь никто никогда не увидит. Тебе всё равно хочется её купить?',
-      options: [['Да', 2], ['Не уверена', 1], ['Уже заметно меньше', 0]],
-      masculineOptions: [['Да', 2], ['Не уверен', 1], ['Уже заметно меньше', 0]]
+      question: 'Есть ли у этой вещи понятное место дома?',
+      options: [['Да, место уже есть', 2], ['Придётся немного освободить или организовать', 1], ['Нет, хранить её пока негде', 0]]
+    },
+    {
+      question: 'Представь, что эту вещь никто никогда не увидит. Насколько тебе всё ещё хочется её купить?',
+      options: [['Всё так же', 2], ['Пока непонятно', 1], ['Уже заметно меньше', 0]]
     }
   ];
   const NEED_TEST_RESULTS = {
@@ -79,6 +81,7 @@
     archiveAction: 'archive',
     archiveAfterDays: 30,
     selfPronoun: 'she',
+    defaultCurrency: '₽',
     gentleReminders: true
   };
   let featureFlags = { testWaits: false };
@@ -129,7 +132,8 @@
     });
   }catch(error){}
 
-  function say(feminine, masculine){
+  function say(feminine, masculine, neutral){
+    if(settings.selfPronoun === 'neutral') return neutral || feminine;
     return settings.selfPronoun === 'he' ? masculine : feminine;
   }
 
@@ -261,6 +265,7 @@
     form.append('price', payload.price);
     form.append('reason', payload.reason);
     if(payload.waitDays !== null) form.append('waitDays', String(payload.waitDays));
+    if(payload.readyAt !== null) form.append('readyAt', String(payload.readyAt));
     if(photo) form.append('photo', photo, 'photo.jpg');
     return api('/api/items-with-photo', { method: 'POST', body: form });
   }
@@ -272,6 +277,7 @@
     form.append('price', payload.price);
     form.append('reason', payload.reason);
     form.append('waitDays', payload.waitDays === null ? 'default' : String(payload.waitDays));
+    form.append('readyAt', payload.readyAt === null ? 'clear' : String(payload.readyAt));
     form.append('removePhoto', removePhoto ? 'true' : 'false');
     if(photo) form.append('photo', photo, 'photo.jpg');
     return api(`/api/items/${id}`, { method: 'PUT', body: form });
@@ -287,9 +293,10 @@
     });
   }
 
-  function snoozeOnServer(id, days){
+  function snoozeOnServer(id, days, readyAt = null){
+    const body = readyAt === null ? { days } : { readyAt };
     return api(`/api/items/${id}/snooze`, {
-      method: 'POST', body: JSON.stringify({ days })
+      method: 'POST', body: JSON.stringify(body)
     });
   }
 
@@ -361,10 +368,50 @@
     return days < 1 ? fmtRemaining(days * DAY) : fmtDays(days);
   }
 
+  function localDateValue(timestamp){
+    const date = new Date(timestamp);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  function readyAtFromDate(value, allowPast = false){
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(value || '')) return null;
+    const [year, month, day] = value.split('-').map(Number);
+    const timestamp = new Date(year, month - 1, day, 12, 0, 0, 0).getTime();
+    return Number.isFinite(timestamp) && (allowPast || timestamp > Date.now()) ? timestamp : null;
+  }
+
+  function prepareDateInput(input){
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    input.min = localDateValue(tomorrow.getTime());
+    input.max = localDateValue(Date.now() + 3649 * DAY);
+    if(input.value && input.value < input.min) input.min = input.value;
+  }
+
+  function toggleWaitDate(select, field, input){
+    const show = select.value === 'date';
+    field.hidden = !show;
+    input.required = show;
+    if(show) prepareDateInput(input);
+  }
+
+  function itemReadyAt(item){
+    if(item.readyAt !== null && item.readyAt !== undefined) return item.readyAt;
+    const wait = (item.waitDays ?? settings.defaultWaitDays) * DAY;
+    return item.addedAt + wait;
+  }
+
+  function fmtCalendarDate(timestamp){
+    return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' })
+      .format(new Date(timestamp));
+  }
+
   function itemStatus(item){
     if(item.archived || item.decision) return 'archived';
-    const wait = (item.waitDays ?? settings.defaultWaitDays) * DAY;
-    return Date.now() >= item.addedAt + wait ? 'ready' : 'waiting';
+    return Date.now() >= itemReadyAt(item) ? 'ready' : 'waiting';
   }
 
   function thumbHTML(item){
@@ -395,7 +442,7 @@
           <span class="gauge-label">пора решать</span>
         </div>
         <div class="actions ready-actions">
-          <button class="btn bought" data-action="bought" data-id="${item.id}">${say('Купила','Купил')}</button>
+          <button class="btn bought" data-action="bought" data-id="${item.id}">${say('Купила','Купил','Уже куплено')}</button>
           <button class="btn drop" data-action="drop" data-id="${item.id}">Уже не надо</button>
           <button class="btn" data-action="keep" data-id="${item.id}">В список желаний</button>
           <button class="btn" data-action="snooze" data-id="${item.id}">Подождать ещё</button>
@@ -404,11 +451,14 @@
   }
 
   function renderWaitingCard(item){
-    const wait = item.waitDays ?? settings.defaultWaitDays;
-    const waitMilliseconds = wait * DAY;
+    const readyAt = itemReadyAt(item);
+    const waitMilliseconds = Math.max(1, readyAt - item.addedAt);
     const elapsed = Date.now() - item.addedAt;
     const percent = Math.max(3, Math.min(100, Math.round((elapsed / waitMilliseconds) * 100)));
-    const left = Math.max(0, waitMilliseconds - elapsed);
+    const left = Math.max(0, readyAt - Date.now());
+    const label = item.readyAt
+      ? `до ${fmtCalendarDate(item.readyAt)}`
+      : `ещё ${fmtRemaining(left)}`;
     return `
       <div class="card waiting-card clickable" data-id="${item.id}" tabindex="0" role="button" aria-label="Открыть ${escAttr(item.name)}">
         <div class="card-top">
@@ -420,7 +470,7 @@
         </div>
         <div class="gauge-row">
           <div class="gauge"><div class="gauge-fill" style="width:${percent}%"></div></div>
-          <span class="gauge-label">ещё ${fmtRemaining(left)}</span>
+          <span class="gauge-label">${label}</span>
         </div>
       </div>`;
   }
@@ -439,16 +489,16 @@
           <button class="wish-check" type="button" role="checkbox" aria-checked="false"
             aria-label="Отметить как купленное" data-action="bought" data-id="${item.id}">✓</button>
         </div>
-        <span class="wish-check-label">${say('Купила?','Купил?')} Отметь галочкой</span>
+        <span class="wish-check-label">${say('Купила?','Купил?','Уже куплено?')} Отметь галочкой</span>
       </div>`;
   }
 
   function renderArchiveRow(item){
     let badge;
-    if(item.decision === 'bought') badge = `<span class="badge kept">${say('купила','купил')}</span>`;
+    if(item.decision === 'bought') badge = `<span class="badge kept">${say('купила','купил','куплено')}</span>`;
     else if(item.decision === 'keep') badge = '<span class="badge kept">в списке желаний</span>';
     else if(item.decision === 'expired') badge = '<span class="badge expired">истёк срок</span>';
-    else badge = `<span class="badge dropped">${say('отказалась','отказался')}</span>`;
+    else badge = `<span class="badge dropped">${say('отказалась','отказался','отказ от покупки')}</span>`;
     return `
       <div class="card clickable" data-id="${item.id}" tabindex="0" role="button" aria-label="Открыть ${escAttr(item.name)}" style="opacity:0.85;">
         <div class="card-top">
@@ -483,7 +533,7 @@
     if(!numberText.trim()) return null;
     const amount = Number(numberText.replace(/\s/g, '').replace(',', '.'));
     if(!Number.isFinite(amount)) return null;
-    if(!currency) currency = '₽';
+    if(!currency) currency = settings.defaultCurrency || '₽';
     return { amount, currency };
   }
 
@@ -512,11 +562,12 @@
     const count = dropped.length;
     $('effectTitle').textContent = say(
       `Ты отказалась от ${count} ${count === 1 ? 'покупки' : 'покупок'}`,
-      `Ты отказался от ${count} ${count === 1 ? 'покупки' : 'покупок'}`
+      `Ты отказался от ${count} ${count === 1 ? 'покупки' : 'покупок'}`,
+      `Удалось отказаться от ${count} ${count === 1 ? 'покупки' : 'покупок'}`
     );
     const amounts = Array.from(totals, ([currency, amount])=>formatAmount(amount, currency));
     $('effectText').textContent = amounts.length
-      ? `${say('Сохранила','Сохранил')}: ${amounts.join(' · ')}`
+      ? `${say('Сохранила','Сохранил','Сохранено')}: ${amounts.join(' · ')}`
       : 'Добавляй цену — здесь появится сохранённая сумма.';
     card.classList.add('visible');
   }
@@ -570,7 +621,8 @@
   function render(){
     $('archiveDecisionLabel').textContent = say(
       'Если не приняла решение за месяц',
-      'Если не принял решение за месяц'
+      'Если не принял решение за месяц',
+      'Если решение не принято за месяц'
     );
     renderEffect();
     renderMonthly();
@@ -631,9 +683,9 @@
   }
 
   function decisionToast(action){
-    if(action === 'bought') return say('Купила — пусть радует!','Купил — пусть радует!');
-    if(action === 'keep') return say('Добавила в список желаний','Добавил в список желаний');
-    return say('Убрала из списка','Убрал из списка');
+    if(action === 'bought') return say('Купила — пусть радует!','Купил — пусть радует!','Уже куплено — пусть радует!');
+    if(action === 'keep') return say('Добавила в список желаний','Добавил в список желаний','Добавлено в список желаний');
+    return say('Убрала из списка','Убрал из списка','Убрано из списка');
   }
 
   async function undoLastAction(id){
@@ -666,10 +718,11 @@
   function statusText(item){
     const status = itemStatus(item);
     if(status === 'ready') return 'Пора принять решение';
+    if(status === 'waiting' && item.readyAt) return `Ждём до ${fmtCalendarDate(item.readyAt)}`;
     if(status === 'waiting') return 'Вещь ещё ждёт своего часа';
-    if(item.decision === 'bought') return say('Купила','Купил');
+    if(item.decision === 'bought') return say('Купила','Купил','Уже куплено');
     if(item.decision === 'keep') return 'В списке желаний';
-    if(item.decision === 'drop') return say('Отказалась от покупки','Отказался от покупки');
+    if(item.decision === 'drop') return say('Отказалась от покупки','Отказался от покупки','Покупка отменена');
     return 'Перенесено в архив';
   }
 
@@ -692,7 +745,7 @@
       unclear: 'Последний результат: пока непонятно.'
     };
     $('needTestSummary').textContent = summaries[item.needTestResult]
-      || 'Семь спокойных вопросов, чтобы свериться с собой.';
+      || 'Восемь спокойных вопросов, чтобы свериться с собой.';
     $('openNeedTest').textContent = item.needTestResult
       ? 'Пройти ещё раз' : 'Пройти короткий тест';
   }
@@ -711,14 +764,21 @@
     $('d-reason').value = item.reason || '';
     const parsed = parsePrice(item.price);
     $('d-price').value = parsed ? parsed.amount : '';
-    $('d-currency').value = parsed ? parsed.currency : '₽';
-    const waitValue = item.waitDays == null ? 'default' : String(item.waitDays);
-    setWaitSelectValue($('d-wait'), waitValue);
+    $('d-currency').value = parsed ? parsed.currency : settings.defaultCurrency;
+    if(item.readyAt){
+      $('d-wait').value = 'date';
+      $('d-wait-date').value = localDateValue(item.readyAt);
+    }else{
+      const waitValue = item.waitDays == null ? 'default' : String(item.waitDays);
+      setWaitSelectValue($('d-wait'), waitValue);
+      $('d-wait-date').value = '';
+    }
+    toggleWaitDate($('d-wait'), $('d-wait-date-field'), $('d-wait-date'));
     $('detailStatus').textContent = statusText(item);
     const archived = itemStatus(item) === 'archived';
     $('detailActions').style.display = itemStatus(item) === 'ready' ? 'grid' : 'none';
     $('restoreItem').hidden = !archived;
-    document.querySelector('[data-detail-action="bought"]').textContent = say('Купила','Купил');
+    document.querySelector('[data-detail-action="bought"]').textContent = say('Купила','Купил','Уже куплено');
     renderDetailPhoto(item);
     renderNeedTestEntry(item);
     $('detailOverlay').classList.add('open');
@@ -1082,11 +1142,16 @@
 
   function openSnooze(id){
     pendingSnoozeId = id;
+    $('snoozeDateField').hidden = true;
+    $('snoozeDate').value = '';
+    prepareDateInput($('snoozeDate'));
     $('snoozeOverlay').classList.add('open');
   }
 
   function closeSnooze(){
     $('snoozeOverlay').classList.remove('open');
+    $('snoozeDateField').hidden = true;
+    $('snoozeDate').value = '';
     pendingSnoozeId = null;
   }
 
@@ -1099,6 +1164,8 @@
 
   function openAdd(url){
     if(url) $('f-url').value = url;
+    if(!$('f-price').value) $('f-currency').value = settings.defaultCurrency;
+    toggleWaitDate($('f-wait'), $('f-wait-date-field'), $('f-wait-date'));
     $('addOverlay').classList.add('open');
     $('closeAdd').focus();
   }
@@ -1145,18 +1212,32 @@
     $('photoAddLabel').hidden = true;
   });
   $('photoRemove').addEventListener('click', clearSelectedPhoto);
+  $('f-wait').addEventListener('change', ()=>{
+    toggleWaitDate($('f-wait'), $('f-wait-date-field'), $('f-wait-date'));
+    if($('f-wait').value === 'date') $('f-wait-date').focus();
+  });
+  $('d-wait').addEventListener('change', ()=>{
+    toggleWaitDate($('d-wait'), $('d-wait-date-field'), $('d-wait-date'));
+    if($('d-wait').value === 'date') $('d-wait-date').focus();
+  });
 
   $('addForm').addEventListener('submit', async event=>{
     event.preventDefault();
     const name = $('f-name').value.trim();
     if(!name) return;
     const waitValue = $('f-wait').value;
+    const readyAt = waitValue === 'date' ? readyAtFromDate($('f-wait-date').value) : null;
+    if(waitValue === 'date' && readyAt === null){
+      showToast('Выбери будущую дату');
+      return;
+    }
     const payload = {
       name,
       url: $('f-url').value.trim(),
       price: buildPrice($('f-price').value, $('f-currency').value),
       reason: $('f-reason').value.trim(),
-      waitDays: waitValue === 'default' ? null : parseFloat(waitValue)
+      waitDays: waitValue === 'default' || waitValue === 'date' ? null : parseFloat(waitValue),
+      readyAt
     };
     const submit = event.currentTarget.querySelector('[type="submit"]');
     submit.disabled = true;
@@ -1166,11 +1247,13 @@
       submit.textContent = 'Сохраняем…';
       await createItemOnServer(payload, photo);
       $('addForm').reset();
+      $('f-currency').value = settings.defaultCurrency;
+      toggleWaitDate($('f-wait'), $('f-wait-date-field'), $('f-wait-date'));
       clearSelectedPhoto();
       $('addOverlay').classList.remove('open');
       await loadData();
       render();
-      showToast(say('Положила в лист ожидания','Положил в лист ожидания'));
+      showToast(say('Положила в лист ожидания','Положил в лист ожидания','Добавлено в лист ожидания'));
     }catch(error){
       showToast('Не получилось сохранить вещь или фото');
     }finally{
@@ -1208,7 +1291,7 @@
         closeDetail();
         await loadData();
         render();
-        showToast(say('Убрала вещь','Убрал вещь'), 'Отменить', ()=>undoLastAction(id));
+        showToast(say('Убрала вещь','Убрал вещь','Вещь убрана'), 'Отменить', ()=>undoLastAction(id));
       }else{
         await snoozeOnServer(id, 7);
         closeNeedTest(false);
@@ -1246,12 +1329,24 @@
     const id = detailItemId;
     if(!id) return;
     const waitValue = $('d-wait').value;
+    const currentItem = items.find(candidate=>candidate.id === id);
+    const chosenDate = $('d-wait-date').value;
+    const readyAt = waitValue === 'date'
+      ? currentItem && currentItem.readyAt && chosenDate === localDateValue(currentItem.readyAt)
+        ? currentItem.readyAt
+        : readyAtFromDate(chosenDate)
+      : null;
+    if(waitValue === 'date' && readyAt === null){
+      showToast('Выбери будущую дату');
+      return;
+    }
     const payload = {
       name: $('d-name').value.trim(),
       url: $('d-url').value.trim(),
       price: buildPrice($('d-price').value, $('d-currency').value),
       reason: $('d-reason').value.trim(),
-      waitDays: waitValue === 'default' ? null : parseFloat(waitValue)
+      waitDays: waitValue === 'default' || waitValue === 'date' ? null : parseFloat(waitValue),
+      readyAt
     };
     const submit = event.currentTarget.querySelector('[type="submit"]');
     submit.disabled = true;
@@ -1263,7 +1358,7 @@
       closeDetail();
       await loadData();
       render();
-      showToast(say('Сохранила изменения','Сохранил изменения'));
+      showToast(say('Сохранила изменения','Сохранил изменения','Изменения сохранены'));
     }catch(error){
       showToast('Не получилось сохранить изменения');
     }finally{
@@ -1280,7 +1375,7 @@
       closeDetail();
       await loadData();
       render();
-      showToast(say('Удалила вещь','Удалил вещь'), 'Отменить', ()=>undoLastAction(id));
+      showToast(say('Удалила вещь','Удалил вещь','Вещь удалена'), 'Отменить', ()=>undoLastAction(id));
     }catch(error){
       showToast('Не получилось удалить вещь');
     }
@@ -1330,6 +1425,33 @@
       }
     });
   });
+  $('snoozeDateOption').addEventListener('click', ()=>{
+    $('snoozeDateField').hidden = false;
+    prepareDateInput($('snoozeDate'));
+    $('snoozeDate').focus();
+  });
+  $('snoozeDateSubmit').addEventListener('click', async ()=>{
+    const id = pendingSnoozeId;
+    const readyAt = readyAtFromDate($('snoozeDate').value);
+    if(!id) return;
+    if(readyAt === null){
+      showToast('Выбери будущую дату');
+      return;
+    }
+    $('snoozeDateSubmit').disabled = true;
+    try{
+      await snoozeOnServer(id, null, readyAt);
+      closeSnooze();
+      closeDetail();
+      await loadData();
+      render();
+      showToast(`Вернёмся к этому ${fmtCalendarDate(readyAt)}`);
+    }catch(error){
+      showToast('Не получилось перенести срок');
+    }finally{
+      $('snoozeDateSubmit').disabled = false;
+    }
+  });
 
   function closeSettings(){
     $('settingsOverlay').classList.remove('open');
@@ -1338,6 +1460,7 @@
 
   $('settingsBtn').addEventListener('click', ()=>{
     $('s-pronoun').value = settings.selfPronoun;
+    $('s-currency').value = settings.defaultCurrency;
     setWaitSelectValue($('s-wait'), settings.defaultWaitDays);
     $('s-hideToggle').classList.toggle('on', !settings.hideWaiting);
     $('s-hideToggle').setAttribute('aria-checked', String(!settings.hideWaiting));
@@ -1355,6 +1478,13 @@
     settings.selfPronoun = $('s-pronoun').value;
     await saveSettings({ selfPronoun: settings.selfPronoun });
     render();
+  });
+  $('s-currency').addEventListener('change', async ()=>{
+    settings.defaultCurrency = $('s-currency').value;
+    await saveSettings({ defaultCurrency: settings.defaultCurrency });
+    if(!$('f-price').value) $('f-currency').value = settings.defaultCurrency;
+    render();
+    showToast(`Валюта по умолчанию: ${settings.defaultCurrency}`);
   });
   $('s-wait').addEventListener('change', async ()=>{
     settings.defaultWaitDays = parseFloat($('s-wait').value);
@@ -1489,7 +1619,8 @@
       items = [];
       settings = {
         defaultWaitDays: 7, hideWaiting: false, archiveAction: 'archive',
-        archiveAfterDays: 30, selfPronoun: 'she', gentleReminders: true
+        archiveAfterDays: 30, selfPronoun: 'she', defaultCurrency: '₽',
+        gentleReminders: true
       };
       $('deleteAccountOverlay').classList.remove('open');
       render();

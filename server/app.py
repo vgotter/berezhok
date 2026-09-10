@@ -34,6 +34,10 @@ BACKUP_MAX_AGE_SECONDS = int(os.environ.get("BACKUP_MAX_AGE_SECONDS", "172800"))
 MIN_FREE_DISK_BYTES = int(os.environ.get("MIN_FREE_DISK_BYTES", str(200 * 1024 * 1024)))
 S3_BUCKET = os.environ.get("S3_BUCKET", "").strip()
 DAY = 86400000
+ALLOWED_CURRENCIES = {
+    "₽", "$", "€", "£", "₾", "֏", "₺", "₪", "₸", "₴",
+    "сом", "сум", "дин", "AED", "Br", "¥",
+}
 PHOTO_DIR = os.environ.get(
     "PHOTO_DIR", os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), "uploads")
 )
@@ -121,6 +125,7 @@ class ItemIn(BaseModel):
     price: str = Field(default="", max_length=100)
     reason: str = Field(default="", max_length=500)
     waitDays: Optional[float] = Field(default=None, ge=0, le=3650)
+    readyAt: Optional[int] = None
 
 
 class DecisionIn(BaseModel):
@@ -128,11 +133,13 @@ class DecisionIn(BaseModel):
 
 
 class SnoozeIn(BaseModel):
-    days: float
+    days: Optional[float] = None
+    readyAt: Optional[int] = None
 
 
 class NeedTestIn(BaseModel):
-    answers: list[int] = Field(min_length=7, max_length=7)
+    # Семь ответов временно принимаются для уже открытых старых вкладок.
+    answers: list[int] = Field(min_length=7, max_length=8)
 
 
 class SettingsIn(BaseModel):
@@ -143,6 +150,7 @@ class SettingsIn(BaseModel):
     archiveAction: Optional[str] = None
     archiveAfterDays: Optional[float] = None
     selfPronoun: Optional[str] = None
+    defaultCurrency: Optional[str] = None
     gentleReminders: Optional[bool] = None
 
 
@@ -162,6 +170,7 @@ def row_to_item(r):
         "price": r["price"],
         "reason": r["reason"] or "",
         "waitDays": r["wait_days"],
+        "readyAt": r["ready_at"],
         "addedAt": r["added_at"],
         "decision": r["decision"],
         "decidedAt": r["decided_at"],
@@ -235,6 +244,7 @@ async def store_photo(upload: UploadFile, item_id: str) -> str:
 def settings_to_dict(row):
     return {
         "defaultWaitDays": row["default_wait_days"],
+        "defaultCurrency": row["default_currency"] or "₽",
         "hideWaiting": bool(row["hide_waiting"]),
         "archiveAction": row["archive_action"],
         "archiveAfterDays": row["archive_after_days"],
@@ -262,8 +272,11 @@ def sweep(conn, user_id, settings_row):
         (user_id,),
     ).fetchall()
     for r in rows:
-        wait = r["wait_days"] if r["wait_days"] is not None else settings_row["default_wait_days"]
-        ready_at = r["added_at"] + wait * DAY
+        if r["ready_at"] is not None:
+            ready_at = r["ready_at"]
+        else:
+            wait = r["wait_days"] if r["wait_days"] is not None else settings_row["default_wait_days"]
+            ready_at = r["added_at"] + wait * DAY
         if now >= ready_at + settings_row["archive_after_days"] * DAY:
             if settings_row["archive_action"] == "delete":
                 conn.execute(
@@ -308,15 +321,17 @@ def create_item(item: ItemIn, user_id: int = Depends(get_user_id)):
     name = item.name.strip()
     if not name:
         raise HTTPException(422, "name must contain 1 to 200 characters")
+    ready_at = validate_ready_at(item.readyAt)
     conn = get_conn()
     item_id = new_id()
     created_at = now_ms()
     conn.execute(
-        "INSERT INTO items (id, user_id, name, url, price, reason, wait_days, added_at) "
-        "VALUES (?,?,?,?,?,?,?,?)",
+        "INSERT INTO items "
+        "(id, user_id, name, url, price, reason, wait_days, ready_at, added_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
         (
             item_id, user_id, name, item.url.strip(), item.price.strip(), item.reason.strip(),
-            item.waitDays, created_at,
+            None if ready_at is not None else item.waitDays, ready_at, created_at,
         ),
     )
     track_event(conn, user_id, "item_added", created_at, "app")
@@ -332,6 +347,7 @@ async def create_item_with_photo(
     price: str = Form(""),
     reason: str = Form(""),
     waitDays: Optional[float] = Form(None),
+    readyAt: Optional[int] = Form(None),
     photo: Optional[UploadFile] = File(None),
     user_id: int = Depends(get_user_id),
 ):
@@ -347,6 +363,7 @@ async def create_item_with_photo(
         not math.isfinite(waitDays) or waitDays < 0 or waitDays > 3650
     ):
         raise HTTPException(422, "invalid wait time")
+    ready_at = validate_ready_at(readyAt)
 
     item_id = new_id()
     filename = None
@@ -358,11 +375,11 @@ async def create_item_with_photo(
     try:
         conn.execute(
             "INSERT INTO items "
-            "(id, user_id, name, url, price, reason, wait_days, added_at, photo_filename) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
+            "(id, user_id, name, url, price, reason, wait_days, ready_at, added_at, photo_filename) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
             (
-                item_id, user_id, name, url, price, reason, waitDays,
-                created_at, filename,
+                item_id, user_id, name, url, price, reason,
+                None if ready_at is not None else waitDays, ready_at, created_at, filename,
             ),
         )
         track_event(conn, user_id, "item_added", created_at, "app")
@@ -387,6 +404,17 @@ def parse_wait_days(value: Optional[str]) -> Optional[float]:
     return days
 
 
+def validate_ready_at(value: Optional[int]) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise HTTPException(422, "invalid ready date")
+    current = now_ms()
+    if value <= current or value > current + 3650 * DAY:
+        raise HTTPException(422, "invalid ready date")
+    return value
+
+
 @app.put("/api/items/{item_id}")
 async def update_item(
     item_id: str,
@@ -395,6 +423,7 @@ async def update_item(
     price: str = Form(""),
     reason: str = Form(""),
     waitDays: Optional[str] = Form(None),
+    readyAt: Optional[str] = Form(None),
     removePhoto: bool = Form(False),
     photo: Optional[UploadFile] = File(None),
     user_id: int = Depends(get_user_id),
@@ -411,7 +440,7 @@ async def update_item(
 
     conn = get_conn()
     row = conn.execute(
-        "SELECT photo_filename FROM items WHERE id=? AND user_id=? "
+        "SELECT photo_filename, ready_at FROM items WHERE id=? AND user_id=? "
         "AND deleted_at IS NULL",
         (item_id, user_id),
     ).fetchone()
@@ -421,15 +450,32 @@ async def update_item(
 
     old_filename = row["photo_filename"]
     new_filename = old_filename
+    if readyAt is None:
+        ready_at = row["ready_at"]
+    elif readyAt == "clear":
+        ready_at = None
+    else:
+        try:
+            parsed_ready_at = int(readyAt)
+            ready_at = (
+                parsed_ready_at
+                if parsed_ready_at == row["ready_at"]
+                else validate_ready_at(parsed_ready_at)
+            )
+        except ValueError:
+            conn.close()
+            raise HTTPException(422, "invalid ready date")
+    if ready_at is not None:
+        wait_days = None
     try:
         if photo is not None and photo.filename:
             new_filename = await store_photo(photo, item_id)
         elif removePhoto:
             new_filename = None
         conn.execute(
-            "UPDATE items SET name=?, url=?, price=?, reason=?, wait_days=?, "
+            "UPDATE items SET name=?, url=?, price=?, reason=?, wait_days=?, ready_at=?, "
             "photo_filename=? WHERE id=? AND user_id=?",
-            (name, url, price, reason, wait_days, new_filename, item_id, user_id),
+            (name, url, price, reason, wait_days, ready_at, new_filename, item_id, user_id),
         )
         conn.commit()
     finally:
@@ -507,8 +553,15 @@ def decide_item(item_id: str, body: DecisionIn, user_id: int = Depends(get_user_
 
 @app.post("/api/items/{item_id}/snooze")
 def snooze_item(item_id: str, body: SnoozeIn, user_id: int = Depends(get_user_id)):
-    if not math.isfinite(body.days) or body.days <= 0 or body.days > 3650:
+    has_days = body.days is not None
+    has_date = body.readyAt is not None
+    if has_days == has_date:
         raise HTTPException(422, "invalid snooze time")
+    if has_days and (
+        not math.isfinite(body.days) or body.days <= 0 or body.days > 3650
+    ):
+        raise HTTPException(422, "invalid snooze time")
+    ready_at = validate_ready_at(body.readyAt)
     conn = get_conn()
     row = conn.execute(
         "SELECT id FROM items WHERE id=? AND user_id=? AND deleted_at IS NULL",
@@ -519,9 +572,9 @@ def snooze_item(item_id: str, body: SnoozeIn, user_id: int = Depends(get_user_id
         raise HTTPException(404, "not found")
     snoozed_at = now_ms()
     conn.execute(
-        "UPDATE items SET added_at=?, wait_days=?, decision=NULL, decided_at=NULL, "
+        "UPDATE items SET added_at=?, wait_days=?, ready_at=?, decision=NULL, decided_at=NULL, "
         "archived=0, notified=0 WHERE id=? AND user_id=?",
-        (snoozed_at, body.days, item_id, user_id),
+        (snoozed_at, body.days if has_days else None, ready_at, item_id, user_id),
     )
     track_event(conn, user_id, "snoozed", snoozed_at, "app")
     conn.commit()
@@ -536,9 +589,13 @@ def save_need_test(
     if any(answer not in {0, 1, 2} for answer in body.answers):
         raise HTTPException(422, "invalid test answer")
     score = sum(body.answers)
-    if score >= 10:
+    if len(body.answers) == 7:
+        needed_score, not_needed_score = 10, 5
+    else:
+        needed_score, not_needed_score = 12, 5
+    if score >= needed_score:
         result = "needed"
-    elif score <= 5:
+    elif score <= not_needed_score:
         result = "not_needed"
     else:
         result = "unclear"
@@ -602,7 +659,7 @@ def restore_item(item_id: str, user_id: int = Depends(get_user_id)):
         raise HTTPException(404, "not found")
     restored_at = now_ms()
     conn.execute(
-        "UPDATE items SET added_at=?, decision=NULL, decided_at=NULL, archived=0, "
+        "UPDATE items SET added_at=?, ready_at=NULL, decision=NULL, decided_at=NULL, archived=0, "
         "notified=0 WHERE id=? AND user_id=?",
         (restored_at, item_id, user_id),
     )
@@ -651,15 +708,19 @@ def update_settings(body: SettingsIn, user_id: int = Depends(get_user_id)):
         "archiveAction": "archive_action",
         "archiveAfterDays": "archive_after_days",
         "selfPronoun": "self_pronoun",
+        "defaultCurrency": "default_currency",
         "gentleReminders": "gentle_reminders",
     }
     data = body.model_dump(exclude_none=True)
     fields, values = [], []
     for key, value in data.items():
         col = mapping[key]
-        if col == "self_pronoun" and value not in {"she", "he"}:
+        if col == "self_pronoun" and value not in {"she", "he", "neutral"}:
             conn.close()
             raise HTTPException(422, "invalid pronoun")
+        if col == "default_currency" and value not in ALLOWED_CURRENCIES:
+            conn.close()
+            raise HTTPException(422, "invalid currency")
         if col == "archive_action" and value not in {"archive", "delete"}:
             conn.close()
             raise HTTPException(422, "invalid archive action")

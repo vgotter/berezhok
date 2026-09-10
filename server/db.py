@@ -46,6 +46,7 @@ def init_db():
     for column, definition in (
         ("reason", "TEXT"),
         ("deleted_at", "INTEGER"),
+        ("ready_at", "INTEGER"),
         ("need_test_result", "TEXT"),
         ("need_test_answers", "TEXT"),
         ("need_test_completed_at", "INTEGER"),
@@ -65,6 +66,7 @@ def init_db():
             archive_action TEXT DEFAULT 'archive',
             archive_after_days REAL DEFAULT 30,
             self_pronoun TEXT DEFAULT 'she',
+            default_currency TEXT DEFAULT '₽',
             gentle_reminders INTEGER DEFAULT 1,
             last_seen_at INTEGER,
             last_gentle_reminder_at INTEGER
@@ -76,6 +78,7 @@ def init_db():
     }
     for column, definition in (
         ("self_pronoun", "TEXT DEFAULT 'she'"),
+        ("default_currency", "TEXT DEFAULT '₽'"),
         ("gentle_reminders", "INTEGER DEFAULT 1"),
         ("last_seen_at", "INTEGER"),
         ("last_gentle_reminder_at", "INTEGER"),
