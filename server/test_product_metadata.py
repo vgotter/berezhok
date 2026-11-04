@@ -88,6 +88,9 @@ class ProductMetadataTest(unittest.TestCase):
         self.assertEqual(normalize_user_price("250 usd"), "$250")
         self.assertEqual(normalize_user_price("20 евро"), "20 €")
         self.assertEqual(normalize_user_price("50 лари"), "50 ₾")
+        self.assertEqual(normalize_user_price("500 CZK"), "500 Kč")
+        self.assertEqual(normalize_user_price("500 кч"), "500 Kč")
+        self.assertEqual(normalize_user_price("500 чешских крон"), "500 Kč")
         self.assertEqual(
             normalize_user_price("цена по запросу"), "цена по запросу"
         )

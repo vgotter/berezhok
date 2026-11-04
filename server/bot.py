@@ -12,6 +12,8 @@ from urllib.parse import urlparse
 from aiogram import Bot, Dispatcher, F
 from aiogram.exceptions import TelegramForbiddenError
 from aiogram.types import (
+    BotCommand,
+    BotCommandScopeChat,
     CallbackQuery,
     FSInputFile,
     InlineKeyboardButton,
@@ -124,6 +126,22 @@ async def send_monitor_alert(key: str, text: str, cooldown_seconds: int = 3600):
         logger.exception("Не удалось отправить сообщение в Пультовую")
 
 
+def monitor_commands():
+    return [
+        BotCommand(command="stats", description="Статистика Бережка"),
+        BotCommand(command="monitor_status", description="Состояние бота и бэкапов"),
+    ]
+
+
+async def configure_monitor_commands(chat_id: int):
+    try:
+        await bot.set_my_commands(
+            monitor_commands(), scope=BotCommandScopeChat(chat_id=chat_id)
+        )
+    except Exception:
+        logger.exception("Не удалось обновить меню Пультовой")
+
+
 @dp.message(Command("monitor_here"))
 async def register_monitor_chat(message: Message):
     username = (message.from_user.username or "").lower()
@@ -138,6 +156,7 @@ async def register_monitor_chat(message: Message):
     )
     conn.commit()
     conn.close()
+    await configure_monitor_commands(message.chat.id)
     await message.answer(
         "🟢 Пультовая подключена. Сюда будут приходить технические сигналы Бережка."
     )
@@ -781,6 +800,9 @@ async def reminder_loop():
 
 async def main():
     reminder_task = asyncio.create_task(reminder_loop())
+    chat_id = monitor_chat_id()
+    if chat_id:
+        await configure_monitor_commands(chat_id)
     await send_monitor_alert(
         "bot-started", "🟢 Бот Бережка запущен и проверяет напоминания.", 0
     )

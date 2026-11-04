@@ -36,7 +36,7 @@ S3_BUCKET = os.environ.get("S3_BUCKET", "").strip()
 DAY = 86400000
 ALLOWED_CURRENCIES = {
     "₽", "$", "€", "£", "₾", "֏", "₺", "₪", "₸", "₴",
-    "сом", "сум", "дин", "AED", "Br", "¥",
+    "сом", "сум", "дин", "AED", "Br", "¥", "Kč",
 }
 PHOTO_DIR = os.environ.get(
     "PHOTO_DIR", os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), "uploads")

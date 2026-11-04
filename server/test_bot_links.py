@@ -8,6 +8,7 @@ os.environ["BOT_TOKEN"] = "123456:test-token"
 from bot import (
     mark_reminder_undeliverable,
     message_url,
+    monitor_commands,
     parse_draft_details,
     shared_name_hint,
 )
@@ -72,6 +73,16 @@ class LinkMessageTest(unittest.TestCase):
         rows = dict(conn.execute("SELECT id, notified FROM items"))
         conn.close()
         self.assertEqual(rows, {"blocked": 1, "another": 0})
+
+    def test_monitor_menu_contains_stats_and_status(self):
+        commands = [(item.command, item.description) for item in monitor_commands()]
+        self.assertEqual(
+            commands,
+            [
+                ("stats", "Статистика Бережка"),
+                ("monitor_status", "Состояние бота и бэкапов"),
+            ],
+        )
 
 
 if __name__ == "__main__":
